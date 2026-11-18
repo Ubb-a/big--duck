@@ -305,8 +305,8 @@ class AppStrings {
       ? 'أدخل رقم API ID و API Hash صحيحين.'
       : 'Enter a valid numeric API ID and API Hash.';
   String get nativeLibUnavailable => ar
-      ? 'مكتبة Rust غير متوفرة في هذا البناء. استخدم معاينة الواجهة.'
-      : 'Native Rust core is unavailable in this build. Use Preview UI.';
+      ? 'مكتبة التشفير الأصلية غير متوفرة على هذا الجهاز.'
+      : 'Native encryption engine is unavailable on this device.';
   String get previewUiActivated =>
       ar ? 'تم تفعيل وضع المعاينة' : 'Preview UI activated';
   String createdFolderToast(String name) =>

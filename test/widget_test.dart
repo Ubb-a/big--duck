@@ -17,14 +17,17 @@ void main() {
   testWidgets(
       'Obsidian & Ivory Signal Vault boots Arabic RTL, searches globally, toggles grid, and switches to English LTR',
       (WidgetTester tester) async {
-    await tester.pumpWidget(const BigDuckApp());
+    final controller = AppController();
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(BigDuckApp(controller: controller));
     await tester.pumpAndSettle();
 
-    // Primary layout starts in Arabic RTL on AuthScreen
+    // Primary layout starts in Arabic RTL on AuthScreen without Preview UI button in production
     expect(find.text('ربط تيليجرام'), findsOneWidget);
-    expect(find.text('معاينة الواجهة'), findsOneWidget);
+    expect(find.text('معاينة الواجهة'), findsNothing);
+    expect(find.text('Preview UI'), findsNothing);
 
-    await tester.tap(find.text('معاينة الواجهة'));
+    controller.enterDemoMode(silent: true);
     await tester.pumpAndSettle();
 
     // Files screen in Arabic RTL
@@ -303,7 +306,8 @@ void main() {
     await tester.pumpWidget(BigDuckApp(controller: controller));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Preview UI'));
+    expect(find.text('Preview UI'), findsNothing);
+    controller.enterDemoMode(silent: true);
     await tester.pumpAndSettle();
 
     // Tapping destination chip directly on FilesScreen opens the storage sheet

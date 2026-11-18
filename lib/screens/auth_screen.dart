@@ -364,49 +364,38 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
         child: SafeArea(
           child: Column(
             children: [
-              // Compact top corner language switch with sliding pill highlight + preview chip
+              // Compact top corner language switch with sliding pill highlight
               Padding(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    VaultMonoChip(
+                child: Align(
+                  alignment: AlignmentDirectional.centerEnd,
+                  child: VaultTap(
+                    onTap: () {
+                      VaultHaptics.light();
+                      ctrl.setArabic(!ctrl.isArabic);
+                    },
+                    child: VaultSurface(
                       palette: p,
-                      label: s.previewUi,
-                      icon: Icons.visibility_outlined,
-                      onTap: () {
-                        VaultHaptics.selection();
-                        ctrl.enterDemoMode();
-                      },
-                    ),
-                    VaultTap(
-                      onTap: () {
-                        VaultHaptics.light();
-                        ctrl.setArabic(!ctrl.isArabic);
-                      },
-                      child: VaultSurface(
-                        palette: p,
-                        borderRadius: VaultRadii.pill,
-                        padding: const EdgeInsets.all(3),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            _LangBadge(
-                              palette: p,
-                              label: 'AR',
-                              active: ctrl.isArabic,
-                            ),
-                            _LangBadge(
-                              palette: p,
-                              label: 'EN',
-                              active: !ctrl.isArabic,
-                            ),
-                          ],
-                        ),
+                      borderRadius: VaultRadii.pill,
+                      padding: const EdgeInsets.all(3),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _LangBadge(
+                            palette: p,
+                            label: 'AR',
+                            active: ctrl.isArabic,
+                          ),
+                          _LangBadge(
+                            palette: p,
+                            label: 'EN',
+                            active: !ctrl.isArabic,
+                          ),
+                        ],
                       ),
                     ),
-                  ],
+                  ),
                 ),
               ),
 

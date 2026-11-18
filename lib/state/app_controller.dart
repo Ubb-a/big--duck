@@ -57,6 +57,33 @@ const List<FileRecord> _initialDemoFiles = [
   ),
 ];
 
+const List<StorageChat> _initialDemoChats = [
+  StorageChat(
+    id: 9001,
+    title: 'BIG DUCK Archive',
+    kind: 'group',
+    isCreator: true,
+    isPrivate: true,
+    memberCount: 1,
+  ),
+  StorageChat(
+    id: 9002,
+    title: 'Personal Media Vault',
+    kind: 'channel',
+    isCreator: true,
+    isPrivate: true,
+    memberCount: 1,
+  ),
+  StorageChat(
+    id: 9003,
+    title: 'Shared Studio Admin',
+    kind: 'group',
+    isCreator: false,
+    isPrivate: true,
+    memberCount: 6,
+  ),
+];
+
 class CacheStats {
   final int fileCount;
   final int totalBytes;
@@ -106,44 +133,19 @@ class AppController extends ChangeNotifier {
   bool isCreatingVault = false;
   String? cachedTargetChatTitle;
   String? cachedTargetChatKind;
-  List<StorageChat> storageChats = const [
-    StorageChat(
-      id: 9001,
-      title: 'BIG DUCK Archive',
-      kind: 'group',
-      isCreator: true,
-      isPrivate: true,
-      memberCount: 1,
-    ),
-    StorageChat(
-      id: 9002,
-      title: 'Personal Media Vault',
-      kind: 'channel',
-      isCreator: true,
-      isPrivate: true,
-      memberCount: 1,
-    ),
-    StorageChat(
-      id: 9003,
-      title: 'Shared Studio Admin',
-      kind: 'group',
-      isCreator: false,
-      isPrivate: true,
-      memberCount: 6,
-    ),
-  ];
+  List<StorageChat> storageChats = const [];
   int? targetChatId;
   MobileTab activeTab = MobileTab.files;
   DirectorySnapshot snapshot = const DirectorySnapshot(
     currentFolder: null,
     breadcrumbs: [],
-    allFolders: _initialDemoFolders,
-    folders: _initialDemoFolders,
-    files: _initialDemoFiles,
-    allFiles: _initialDemoFiles,
+    allFolders: [],
+    folders: [],
+    files: [],
+    allFiles: [],
     tasks: [],
   );
-  List<FileRecord> _demoAllFiles = List<FileRecord>.from(_initialDemoFiles);
+  List<FileRecord> _demoAllFiles = const [];
   List<Folder> _undoFolders = const [];
   List<FileRecord> _undoFiles = const [];
   int floodWaitSeconds = 0;
@@ -193,6 +195,17 @@ class AppController extends ChangeNotifier {
     cachedFullName = fullName;
     cachedUsername = username;
     isReconnecting = true;
+    storageChats = List<StorageChat>.from(_initialDemoChats);
+    _demoAllFiles = List<FileRecord>.from(_initialDemoFiles);
+    snapshot = DirectorySnapshot(
+      currentFolder: null,
+      breadcrumbs: const [],
+      allFolders: _initialDemoFolders,
+      folders: _initialDemoFolders,
+      files: _demoAllFiles.where((f) => f.folderId == null).toList(),
+      allFiles: List<FileRecord>.from(_demoAllFiles),
+      tasks: const [],
+    );
     notifyListeners();
   }
 
@@ -724,7 +737,8 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void enterDemoMode() {
+  @visibleForTesting
+  void enterDemoMode({bool silent = false}) {
     demoMode = true;
     isLoadingVault = false;
     lastBackupAt ??= 1731780000;
@@ -733,6 +747,7 @@ class AppController extends ChangeNotifier {
       fullName: 'BIG DUCK Demo',
       username: 'bigduck_demo',
     );
+    storageChats = List<StorageChat>.from(_initialDemoChats);
     _demoAllFiles = List<FileRecord>.from(_initialDemoFiles);
     snapshot = DirectorySnapshot(
       currentFolder: null,
@@ -744,7 +759,11 @@ class AppController extends ChangeNotifier {
       tasks: const [],
     );
     _flushPendingSharedFiles();
-    showToast(strings.previewUiActivated);
+    if (silent) {
+      notifyListeners();
+    } else {
+      showToast(strings.previewUiActivated);
+    }
   }
 
   void exitDemoMode() {
