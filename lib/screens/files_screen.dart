@@ -193,14 +193,24 @@ class _FilesScreenState extends State<FilesScreen>
   }
 
   Future<List<String>> _pickDocuments() async {
-    final files = await FilePicker.pickFiles();
-    return files.map((f) => f.path).whereType<String>().toList();
+    try {
+      final files = await FilePicker.pickFiles();
+      return files.map((f) => f.path).whereType<String>().toList();
+    } catch (e) {
+      if (mounted) widget.controller.showToast('$e', isError: true);
+      return const [];
+    }
   }
 
   Future<List<String>> _pickMedia() async {
-    final picker = ImagePicker();
-    final files = await picker.pickMultipleMedia();
-    return files.map((x) => x.path).toList();
+    try {
+      final picker = ImagePicker();
+      final files = await picker.pickMultipleMedia();
+      return files.map((x) => x.path).toList();
+    } catch (e) {
+      if (mounted) widget.controller.showToast('$e', isError: true);
+      return const [];
+    }
   }
 
   void _showUploadBottomSheet() {

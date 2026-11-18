@@ -17,6 +17,7 @@ class TransfersScreen extends StatefulWidget {
   final List<TaskRecord> tasks;
   final Map<int, String> fileNamesById;
   final Map<int, int> fileSizesById;
+  final Map<int, double> taskSpeedsById;
   final int chunkSizeMiB;
   final int floodWaitSeconds;
   final double bottomPadding;
@@ -31,7 +32,8 @@ class TransfersScreen extends StatefulWidget {
     required this.tasks,
     required this.fileNamesById,
     required this.fileSizesById,
-    this.chunkSizeMiB = 512,
+    this.taskSpeedsById = const {},
+    this.chunkSizeMiB = 64,
     required this.floodWaitSeconds,
     required this.bottomPadding,
     this.onPauseTask,
@@ -210,6 +212,9 @@ class _TransfersScreenState extends State<TransfersScreen> {
                               totalBytes: widget
                                       .fileSizesById[visibleTasks[i].fileId] ??
                                   0,
+                              speedBytesPerSec:
+                                  widget.taskSpeedsById[visibleTasks[i].id] ??
+                                      0.0,
                               chunkSizeMiB: widget.chunkSizeMiB,
                               onPause: widget.onPauseTask != null
                                   ? () {
@@ -386,6 +391,7 @@ class _TransferGlassCard extends StatefulWidget {
   final TaskRecord task;
   final String fileName;
   final int totalBytes;
+  final double speedBytesPerSec;
   final int chunkSizeMiB;
   final VoidCallback? onPause;
   final VoidCallback? onResume;
@@ -397,6 +403,7 @@ class _TransferGlassCard extends StatefulWidget {
     required this.task,
     required this.fileName,
     required this.totalBytes,
+    this.speedBytesPerSec = 0.0,
     required this.chunkSizeMiB,
     this.onPause,
     this.onResume,
@@ -466,8 +473,8 @@ class _TransferGlassCardState extends State<_TransferGlassCard>
 
     final chunkBytes = (widget.chunkSizeMiB * 1024 * 1024).clamp(1, 1 << 30);
     final totalChunks = widget.totalBytes <= 0
-        ? 4
-        : (widget.totalBytes / chunkBytes).ceil().clamp(2, 16);
+        ? 1
+        : (widget.totalBytes / chunkBytes).ceil().clamp(1, 24);
     final currentChunk = task.state == TaskState.completed
         ? totalChunks
         : (progress * totalChunks).ceil().clamp(1, totalChunks);
@@ -484,9 +491,42 @@ class _TransferGlassCardState extends State<_TransferGlassCard>
       TaskState.failed => strings.ar ? 'تعذّر' : 'FAILED',
     };
 
-    final bytesMeta = widget.totalBytes > 0
-        ? '${formatBytes((widget.totalBytes * progress).round())} / ${formatBytes(widget.totalBytes)}'
-        : stateText;
+    final speedLabel = task.state == TaskState.running
+        ? formatSpeed(widget.speedBytesPerSec)
+        : '';
+    final etaLabel = (task.state == TaskState.running &&
+            widget.speedBytesPerSec > 0 &&
+            widget.totalBytes > 0 &&
+            progress < 1.0)
+        ? formatEta(
+            (math.max(
+                      0,
+                      widget.totalBytes - (widget.totalBytes * progress).round(),
+                    ) /
+                    widget.speedBytesPerSec)
+                .ceil(),
+            ar: strings.ar,
+          )
+        : '';
+
+    final String bytesMeta;
+    if (task.state == TaskState.running &&
+        progress <= 0.001 &&
+        speedLabel.isEmpty) {
+      bytesMeta = widget.totalBytes > 0
+          ? '${strings.preparingTransferLabel} · ${formatBytes(widget.totalBytes)}'
+          : strings.preparingTransferLabel;
+    } else if (widget.totalBytes > 0) {
+      final base =
+          '${formatBytes((widget.totalBytes * progress).round())} / ${formatBytes(widget.totalBytes)}';
+      bytesMeta = speedLabel.isNotEmpty ? '$base · $speedLabel' : base;
+    } else {
+      bytesMeta = speedLabel.isNotEmpty ? '$stateText · $speedLabel' : stateText;
+    }
+
+    final chunkLabel = etaLabel.isNotEmpty
+        ? '$etaLabel · ${strings.chunkProgressLabel(currentChunk, totalChunks)}'
+        : strings.chunkProgressLabel(currentChunk, totalChunks);
 
     return VaultHorizontalShake(
       triggerCount: _failShakeCount,
@@ -554,19 +594,15 @@ class _TransferGlassCardState extends State<_TransferGlassCard>
                           ),
                           const SizedBox(width: 6),
                           Flexible(
-                            child: AnimatedSwitcher(
-                              duration: const Duration(milliseconds: 120),
-                              child: Text(
+                            child: Text(
+                              '· $bytesMeta',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: VaultText.monoText(
+                                p,
                                 '· $bytesMeta',
-                                key: ValueKey(bytesMeta),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: VaultText.monoText(
-                                  p,
-                                  '· $bytesMeta',
-                                  size: 11,
-                                  color: p.secondary,
-                                ),
+                                size: 11,
+                                color: p.secondary,
                               ),
                             ),
                           ),
@@ -675,10 +711,10 @@ class _TransferGlassCardState extends State<_TransferGlassCard>
                 ),
                 const SizedBox(width: 12),
                 Text(
-                  strings.chunkProgressLabel(currentChunk, totalChunks),
+                  chunkLabel,
                   style: VaultText.monoText(
                     p,
-                    strings.chunkProgressLabel(currentChunk, totalChunks),
+                    chunkLabel,
                     size: 10.5,
                     color: p.secondary,
                   ),

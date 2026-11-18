@@ -140,6 +140,8 @@ class AppStrings {
   String get resumeAction => ar ? 'استكمال' : 'Resume';
   String get uploadLabel => ar ? 'رفع' : 'Upload';
   String get downloadLabel => ar ? 'تنزيل' : 'Download';
+  String get preparingTransferLabel =>
+      ar ? 'جاري التجهيز والتشفير...' : 'Preparing & encrypting...';
 
   // Settings sections (mono small caps headlines)
   String get settingsTitle => ar ? 'الإعدادات' : 'Settings';

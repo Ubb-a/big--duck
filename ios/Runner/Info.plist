@@ -28,6 +28,10 @@
 	<true/>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Unlock your encrypted BIG DUCK vault with Face ID or Touch ID.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Select photos and videos from your library to encrypt and back up to your BIG DUCK vault.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Save decrypted photos and videos from your BIG DUCK vault to your library.</string>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
 	<key>CFBundleDocumentTypes</key>

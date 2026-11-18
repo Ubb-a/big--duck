@@ -128,7 +128,7 @@ class AppController extends ChangeNotifier {
   String? authError;
   String apiId = '';
   String apiHash = '';
-  int chunkSizeMiB = 512;
+  int chunkSizeMiB = 64;
   bool isLoadingChats = false;
   bool isCreatingVault = false;
   String? cachedTargetChatTitle;
@@ -158,6 +158,10 @@ class AppController extends ChangeNotifier {
   Offset? themeRevealOrigin;
   int themeChangeId = 0;
   final Map<int, String> _localPathsByFileId = {};
+  final Map<int, double> _taskSpeedBytesPerSec = {};
+  final Map<int, ({DateTime at, double progress})> _taskSpeedSamples = {};
+  final Map<String, int> _stagedUploadSizesByName = {};
+  DateTime Function() _clock = DateTime.now;
 
   AppController({
     CoreBridge? bridge,
@@ -165,6 +169,26 @@ class AppController extends ChangeNotifier {
   }) : _bridge = bridge ?? CoreBridge() {
     _init();
   }
+
+  Map<int, double> get taskSpeedsById =>
+      Map.unmodifiable(_taskSpeedBytesPerSec);
+
+  String fileNameForId(int fileId) => _fileNameForId(fileId);
+
+  int fileSizeForId(int fileId, {String? fallbackName}) {
+    final fromAll = snapshot.allFiles.where((f) => f.id == fileId).firstOrNull;
+    if (fromAll != null) return fromAll.size;
+    final fromCur = snapshot.files.where((f) => f.id == fileId).firstOrNull;
+    if (fromCur != null) return fromCur.size;
+    final name = fallbackName ?? _fileNameForId(fileId);
+    return _stagedUploadSizesByName[name] ?? 0;
+  }
+
+  @visibleForTesting
+  void debugApplyBridgeEvent(BridgeEvent event) => _handleEvent(event);
+
+  @visibleForTesting
+  void debugSetClock(DateTime Function() clock) => _clock = clock;
 
   AppStrings get strings => AppStrings(isArabic);
   bool get hasNativeCore => _bridge.isNativeAvailable;
@@ -380,12 +404,10 @@ class AppController extends ChangeNotifier {
     if (!_bridge.isNativeAvailable) return;
     await _bridge.start();
     _sub = _bridge.events.listen(_handleEvent);
-    if (_hasCustomChunkSize) {
-      _bridge.sendCommand({
-        'type': 'set_chunk_size',
-        'chunk_size': chunkSizeMiB * 1024 * 1024,
-      });
-    }
+    _bridge.sendCommand({
+      'type': 'set_chunk_size',
+      'chunk_size': chunkSizeMiB * 1024 * 1024,
+    });
     if (_encryptionPassword != null && _encryptionPassword!.isNotEmpty) {
       _bridge.sendCommand({
         'type': 'set_encryption_password',
@@ -459,6 +481,12 @@ class AppController extends ChangeNotifier {
   }
 
   void onAppResumed() {
+    if (hasNativeCore &&
+        authStatus.isAuthorized &&
+        storageChats.isEmpty &&
+        !isLoadingChats) {
+      refreshChats();
+    }
     final bgAt = _backgroundedAt;
     _backgroundedAt = null;
     if (bgAt == null ||
@@ -541,6 +569,75 @@ class AppController extends ChangeNotifier {
     return fromCur?.name ?? 'File #$fileId';
   }
 
+  void _upsertTaskState({
+    required int taskId,
+    required int fileId,
+    required TaskKind kind,
+    required TaskState state,
+    required double progress,
+  }) {
+    if (taskId <= 0) return;
+    final existingIdx = snapshot.tasks.indexWhere((t) => t.id == taskId);
+    final updatedTasks = List<TaskRecord>.from(snapshot.tasks);
+    if (existingIdx >= 0) {
+      final prev = updatedTasks[existingIdx];
+      updatedTasks[existingIdx] = TaskRecord(
+        id: prev.id,
+        kind: kind,
+        fileId: fileId > 0 ? fileId : prev.fileId,
+        state: state,
+        progress: progress,
+        error: state == TaskState.failed ? prev.error : null,
+      );
+    } else {
+      updatedTasks.insert(
+        0,
+        TaskRecord(
+          id: taskId,
+          kind: kind,
+          fileId: fileId,
+          state: state,
+          progress: progress,
+        ),
+      );
+    }
+    snapshot = snapshot.copyWith(tasks: updatedTasks);
+  }
+
+  void _updateTaskSpeed({
+    required int taskId,
+    required int fileId,
+    required double progress,
+  }) {
+    if (taskId <= 0) return;
+    final now = _clock();
+    final sample = _taskSpeedSamples[taskId];
+    if (sample == null || progress < sample.progress) {
+      _taskSpeedSamples[taskId] = (at: now, progress: progress);
+      return;
+    }
+    final dtMs = now.difference(sample.at).inMilliseconds;
+    final totalBytes = fileSizeForId(fileId);
+    if (progress > sample.progress && dtMs >= 200 && totalBytes > 0) {
+      final instantBps =
+          ((progress - sample.progress) * totalBytes) / (dtMs / 1000.0);
+      final prevBps = _taskSpeedBytesPerSec[taskId] ?? 0.0;
+      _taskSpeedBytesPerSec[taskId] =
+          prevBps > 0 ? (prevBps * 0.65 + instantBps * 0.35) : instantBps;
+      _taskSpeedSamples[taskId] = (at: now, progress: progress);
+    }
+  }
+
+  void _clearTaskSpeed(int taskId) {
+    if (taskId <= 0) {
+      _taskSpeedBytesPerSec.clear();
+      _taskSpeedSamples.clear();
+      return;
+    }
+    _taskSpeedBytesPerSec.remove(taskId);
+    _taskSpeedSamples.remove(taskId);
+  }
+
   void _handleEvent(BridgeEvent ev) {
     switch (ev) {
       case ReadyEvent(:final defaultChunkSize):
@@ -582,7 +679,27 @@ class AppController extends ChangeNotifier {
         }
         notifyListeners();
       case SnapshotEvent(:final snapshot):
-        this.snapshot = snapshot;
+        final liveProgressById = <int, double>{
+          for (final t in this.snapshot.tasks)
+            if (t.state == TaskState.running) t.id: t.progress,
+        };
+        final mergedTasks = snapshot.tasks.map((t) {
+          final live = liveProgressById[t.id];
+          if (t.state == TaskState.running &&
+              live != null &&
+              live > t.progress) {
+            return TaskRecord(
+              id: t.id,
+              kind: t.kind,
+              fileId: t.fileId,
+              state: t.state,
+              progress: live,
+              error: t.error,
+            );
+          }
+          return t;
+        }).toList(growable: false);
+        this.snapshot = snapshot.copyWith(tasks: mergedTasks);
         isLoadingVault = false;
         notifyListeners();
       case QueueUpdateEvent(
@@ -596,39 +713,80 @@ class AppController extends ChangeNotifier {
           :final message
         ):
         final isUpload = kind == 'upload';
+        final taskKind = isUpload ? TaskKind.upload : TaskKind.download;
         if (event == 'task_flood_wait' && seconds > 0) {
           _startFloodCountdown(seconds);
         } else if (event == 'task_progress') {
+          final clamped = progress.clamp(0.0, 1.0);
+          _upsertTaskState(
+            taskId: taskId,
+            fileId: fileId,
+            kind: taskKind,
+            state: TaskState.running,
+            progress: clamped,
+          );
+          _updateTaskSpeed(
+            taskId: taskId,
+            fileId: fileId,
+            progress: clamped,
+          );
+          notifyListeners();
           notifications.showProgress(
             taskId: taskId,
             fileName: _fileNameForId(fileId),
             isUpload: isUpload,
-            progress: progress,
+            progress: clamped,
             isArabic: isArabic,
           );
         } else if (event == 'task_paused') {
+          _clearTaskSpeed(taskId);
+          final existingProgress = snapshot.tasks
+                  .where((t) => t.id == taskId)
+                  .firstOrNull
+                  ?.progress ??
+              progress.clamp(0.0, 1.0);
+          _upsertTaskState(
+            taskId: taskId,
+            fileId: fileId,
+            kind: taskKind,
+            state: TaskState.paused,
+            progress: existingProgress,
+          );
+          notifyListeners();
           notifications.showPaused(
             taskId: taskId,
             fileName: _fileNameForId(fileId),
             isArabic: isArabic,
           );
         } else if (event == 'task_completed') {
+          _clearTaskSpeed(taskId);
+          _stagedUploadSizesByName.remove(_fileNameForId(fileId));
+          _upsertTaskState(
+            taskId: taskId,
+            fileId: fileId,
+            kind: taskKind,
+            state: TaskState.completed,
+            progress: 1.0,
+          );
+          notifyListeners();
           notifications.showCompleted(
             taskId: taskId,
             fileName: _fileNameForId(fileId),
             isUpload: isUpload,
             isArabic: isArabic,
           );
-        } else if (event == 'task_failed' &&
-            message != null &&
-            message.isNotEmpty) {
-          showToast(message, isError: true);
-          notifications.showFailed(
-            fileLabel: fileLabel ??
-                (fileId > 0 ? _fileNameForId(fileId) : 'Transfer'),
-            error: message,
-            isArabic: isArabic,
-          );
+        } else if (event == 'task_failed') {
+          _clearTaskSpeed(taskId);
+          if (message != null && message.isNotEmpty) {
+            showToast(message, isError: true);
+            notifications.showFailed(
+              fileLabel: fileLabel ??
+                  (fileId > 0 ? _fileNameForId(fileId) : 'Transfer'),
+              error: message,
+              isArabic: isArabic,
+            );
+          }
+          notifyListeners();
         }
       case ChatsListedEvent(:final chats):
         isLoadingChats = false;
@@ -1227,6 +1385,17 @@ class AppController extends ChangeNotifier {
       _refreshDemoView(snapshot.currentFolder?.id);
       showToast(strings.queuedUploadToast(added.length));
       return;
+    }
+    for (final p in paths) {
+      final name = p.split(RegExp(r'[/\\]')).last;
+      if (name.isNotEmpty) {
+        try {
+          final file = File(p);
+          if (file.existsSync()) {
+            _stagedUploadSizesByName[name] = file.lengthSync();
+          }
+        } catch (_) {}
+      }
     }
     _bridge.sendCommand({
       'type': 'upload_files',

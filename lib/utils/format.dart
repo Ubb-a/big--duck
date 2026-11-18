@@ -13,6 +13,27 @@ String formatBytes(int bytes) {
   return '${value.toStringAsFixed(decimals)} ${units[idx]}';
 }
 
+String formatSpeed(double bytesPerSec) {
+  if (bytesPerSec <= 0 || !bytesPerSec.isFinite) return '';
+  return '${formatBytes(bytesPerSec.round())}/s';
+}
+
+String formatEta(int seconds, {required bool ar}) {
+  if (seconds <= 0) return '';
+  if (seconds < 60) {
+    return ar ? 'متبقي $secondsث' : '${seconds}s left';
+  }
+  if (seconds < 3600) {
+    final m = seconds ~/ 60;
+    final s = seconds % 60;
+    if (s == 0) return ar ? 'متبقي $mد' : '${m}m left';
+    return ar ? 'متبقي $mد $sث' : '${m}m ${s}s left';
+  }
+  final h = seconds ~/ 3600;
+  final m = (seconds % 3600) ~/ 60;
+  return ar ? 'متبقي $hس $mد' : '${h}h ${m}m left';
+}
+
 String formatTimestamp(int unixSeconds) {
   if (unixSeconds <= 0) return '';
   final dt = DateTime.fromMillisecondsSinceEpoch(unixSeconds * 1000);

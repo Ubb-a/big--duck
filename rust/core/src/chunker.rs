@@ -20,8 +20,8 @@ use crate::models::{
 };
 use crate::telegram::TelegramClient;
 
-/// Default maximum chunk size: 1 GiB.
-pub const DEFAULT_CHUNK_SIZE: u64 = 1024 * 1024 * 1024;
+/// Default maximum chunk size: 64 MiB (balances mobile RAM, fast encryption, and resumability).
+pub const DEFAULT_CHUNK_SIZE: u64 = 64 * 1024 * 1024;
 
 /// Default number of chunks transferred concurrently per file.
 pub const DEFAULT_MAX_CONCURRENT_CHUNKS: usize = 3;
@@ -180,6 +180,23 @@ pub trait ChunkTransport: Send + Sync {
         caption: String,
     ) -> impl Future<Output = Result<i32>> + Send;
 
+    /// Uploads a file chunk while reporting incremental plain/encoded byte progress.
+    fn upload_chunk_with_progress<F>(
+        &self,
+        path: &Path,
+        offset: u64,
+        size: u64,
+        file_name: String,
+        caption: String,
+        on_progress: F,
+    ) -> impl Future<Output = Result<i32>> + Send
+    where
+        F: Fn(u64) + Send + Sync,
+    {
+        let _ = on_progress;
+        self.upload_chunk(path, offset, size, file_name, caption)
+    }
+
     /// Uploads an in-memory chunk buffer (e.g. encrypted payload) and returns the message ID.
     fn upload_bytes(
         &self,
@@ -188,12 +205,41 @@ pub trait ChunkTransport: Send + Sync {
         caption: String,
     ) -> impl Future<Output = Result<i32>> + Send;
 
+    /// Uploads an in-memory chunk buffer while reporting incremental uploaded bytes.
+    fn upload_bytes_with_progress<F>(
+        &self,
+        data: Vec<u8>,
+        file_name: String,
+        caption: String,
+        on_progress: F,
+    ) -> impl Future<Output = Result<i32>> + Send
+    where
+        F: Fn(u64) + Send + Sync,
+    {
+        let _ = on_progress;
+        self.upload_bytes(data, file_name, caption)
+    }
+
     /// Downloads the chunk payload referenced by `message_id` into `dest`.
     fn download_chunk(
         &self,
         message_id: i32,
         dest: &Path,
     ) -> impl Future<Output = Result<()>> + Send;
+
+    /// Downloads the chunk payload while reporting downloaded byte counts.
+    fn download_chunk_with_progress<F>(
+        &self,
+        message_id: i32,
+        dest: &Path,
+        on_progress: F,
+    ) -> impl Future<Output = Result<()>> + Send
+    where
+        F: Fn(u64) + Send + Sync,
+    {
+        let _ = on_progress;
+        self.download_chunk(message_id, dest)
+    }
 }
 
 impl ChunkTransport for TelegramClient {
@@ -205,24 +251,135 @@ impl ChunkTransport for TelegramClient {
         file_name: String,
         caption: String,
     ) -> Result<i32> {
+        <Self as ChunkTransport>::upload_chunk_with_progress(
+            self,
+            path,
+            offset,
+            size,
+            file_name,
+            caption,
+            |_| {},
+        )
+        .await
+    }
+
+    async fn upload_chunk_with_progress<F>(
+        &self,
+        path: &Path,
+        offset: u64,
+        size: u64,
+        file_name: String,
+        caption: String,
+        on_progress: F,
+    ) -> Result<i32>
+    where
+        F: Fn(u64) + Send + Sync,
+    {
         let size_usize = usize::try_from(size).map_err(|_| {
             CoreError::InvalidConfig(format!(
                 "chunk size {size} exceeds addressable usize on this platform"
             ))
         })?;
-        let mut file = tokio::fs::File::open(path).await?;
-        file.seek(SeekFrom::Start(offset)).await?;
-        let mut limited = file.take(size);
-        self.upload_stream(&mut limited, size_usize, file_name, &caption)
-            .await
+        for attempt in 0..=2u8 {
+            on_progress(0);
+            let mut file = tokio::fs::File::open(path).await?;
+            file.seek(SeekFrom::Start(offset)).await?;
+            let mut limited = file.take(size);
+            match self
+                .upload_stream_with_progress(
+                    &mut limited,
+                    size_usize,
+                    file_name.clone(),
+                    &caption,
+                    &on_progress,
+                )
+                .await
+            {
+                Ok(id) => return Ok(id),
+                Err(err) if attempt < 2 && err.is_transient_network() => {
+                    warn!(
+                        attempt = attempt + 1,
+                        error = %err,
+                        "Transient network disconnect during chunk stream; retrying chunk upload"
+                    );
+                    tokio::time::sleep(Duration::from_millis(350 * u64::from(attempt + 1))).await;
+                }
+                Err(err) => return Err(err),
+            }
+        }
+        unreachable!("loop always returns on success or final error")
     }
 
     async fn upload_bytes(&self, data: Vec<u8>, file_name: String, caption: String) -> Result<i32> {
-        self.upload_bytes(data, file_name, &caption).await
+        <Self as ChunkTransport>::upload_bytes_with_progress(
+            self,
+            data,
+            file_name,
+            caption,
+            |_| {},
+        )
+        .await
+    }
+
+    async fn upload_bytes_with_progress<F>(
+        &self,
+        data: Vec<u8>,
+        file_name: String,
+        caption: String,
+        on_progress: F,
+    ) -> Result<i32>
+    where
+        F: Fn(u64) + Send + Sync,
+    {
+        let size = data.len();
+        if size == 0 {
+            return Err(CoreError::InvalidConfig(
+                "cannot upload a 0-byte stream to Telegram".to_string(),
+            ));
+        }
+        for attempt in 0..=2u8 {
+            on_progress(0);
+            let mut cursor = std::io::Cursor::new(data.as_slice());
+            match self
+                .upload_stream_with_progress(
+                    &mut cursor,
+                    size,
+                    file_name.clone(),
+                    &caption,
+                    &on_progress,
+                )
+                .await
+            {
+                Ok(id) => return Ok(id),
+                Err(err) if attempt < 2 && err.is_transient_network() => {
+                    warn!(
+                        attempt = attempt + 1,
+                        error = %err,
+                        "Transient network disconnect during encrypted chunk upload; retrying"
+                    );
+                    tokio::time::sleep(Duration::from_millis(350 * u64::from(attempt + 1))).await;
+                }
+                Err(err) => return Err(err),
+            }
+        }
+        unreachable!("loop always returns on success or final error")
     }
 
     async fn download_chunk(&self, message_id: i32, dest: &Path) -> Result<()> {
         self.download_file(message_id, dest).await
+    }
+
+    async fn download_chunk_with_progress<F>(
+        &self,
+        message_id: i32,
+        dest: &Path,
+        on_progress: F,
+    ) -> Result<()>
+    where
+        F: Fn(u64) + Send + Sync,
+    {
+        self.download_file_with_progress(message_id, dest, on_progress)
+            .await
     }
 }
 
@@ -423,10 +580,20 @@ impl<'a, T: ChunkTransport> TransferEngine<'a, T> {
     ) -> Result<()> {
         let concurrency = self.config.max_concurrent_chunks.max(1);
         let semaphore = Arc::new(Semaphore::new(concurrency));
+        let tracker = Arc::new(LiveProgressTracker::new(
+            pending_specs.len(),
+            *uploaded_bytes,
+            file_size,
+            TaskKind::Upload,
+            task_id,
+            file.id,
+            self.notifier.clone(),
+        ));
         let mut in_flight = FuturesUnordered::new();
 
-        for spec in pending_specs {
+        for (slot, spec) in pending_specs.into_iter().enumerate() {
             let permit_sem = Arc::clone(&semaphore);
+            let tracker_ref = Arc::clone(&tracker);
             let chunk_name = format_chunk_file_name(file_name, spec.index, total_chunks);
             let caption = format!("{file_name} [{}/{}]", spec.index + 1, total_chunks);
             let policy = self.config.retry_policy;
@@ -442,30 +609,59 @@ impl<'a, T: ChunkTransport> TransferEngine<'a, T> {
                 let (msg_id, stored_size) = if let Some(password) = enc_pw {
                     let encrypted = read_and_encrypt_chunk(source_path, spec, password).await?;
                     let enc_len = encrypted.len() as u64;
+                    let tracker_cb = Arc::clone(&tracker_ref);
+                    let spec_size = spec.size;
                     let msg_id = retry_on_flood_wait(policy, task_id, file_id, notifier, || {
-                        self.transport.upload_bytes(
-                            encrypted.clone(),
-                            chunk_name.clone(),
-                            caption.clone(),
-                        )
+                        let tracker_inner = Arc::clone(&tracker_cb);
+                        let encrypted_clone = encrypted.clone();
+                        let chunk_name_clone = chunk_name.clone();
+                        let caption_clone = caption.clone();
+                        async move {
+                            self.transport
+                                .upload_bytes_with_progress(
+                                    encrypted_clone,
+                                    chunk_name_clone,
+                                    caption_clone,
+                                    move |enc_done| {
+                                        let plain_done = ((u128::from(enc_done)
+                                            * u128::from(spec_size))
+                                            / u128::from(enc_len.max(1)))
+                                            as u64;
+                                        tracker_inner.update_chunk(slot, plain_done, spec_size);
+                                    },
+                                )
+                                .await
+                        }
                     })
                     .await?;
                     (msg_id, enc_len)
                 } else {
+                    let tracker_cb = Arc::clone(&tracker_ref);
+                    let spec_size = spec.size;
                     let msg_id = retry_on_flood_wait(policy, task_id, file_id, notifier, || {
-                        self.transport.upload_chunk(
-                            source_path,
-                            spec.offset,
-                            spec.size,
-                            chunk_name.clone(),
-                            caption.clone(),
-                        )
+                        let tracker_inner = Arc::clone(&tracker_cb);
+                        let chunk_name_clone = chunk_name.clone();
+                        let caption_clone = caption.clone();
+                        async move {
+                            self.transport
+                                .upload_chunk_with_progress(
+                                    source_path,
+                                    spec.offset,
+                                    spec.size,
+                                    chunk_name_clone,
+                                    caption_clone,
+                                    move |done| {
+                                        tracker_inner.update_chunk(slot, done, spec_size);
+                                    },
+                                )
+                                .await
+                        }
                     })
                     .await?;
                     (msg_id, spec.size)
                 };
 
-                Ok::<(ChunkSpec, i32, u64), CoreError>((spec, msg_id, stored_size))
+                Ok::<(usize, ChunkSpec, i32, u64), CoreError>((slot, spec, msg_id, stored_size))
             });
         }
 
@@ -481,7 +677,7 @@ impl<'a, T: ChunkTransport> TransferEngine<'a, T> {
                     res
                 }
             };
-            let (spec, msg_id, stored_size) = res?;
+            let (slot, spec, msg_id, stored_size) = res?;
             let chunk_index_i64 = i64::try_from(spec.index).map_err(|_| {
                 CoreError::InvalidConfig(format!("chunk index {} exceeds i64::MAX", spec.index))
             })?;
@@ -498,14 +694,23 @@ impl<'a, T: ChunkTransport> TransferEngine<'a, T> {
                 })
                 .await?;
 
+            tracker.mark_chunk_done(slot, spec.size);
             *uploaded_bytes += spec.size;
-            self.report_progress(
+            let _ = self
+                .db
+                .update_task_progress(
+                    task_id,
+                    TaskState::Running,
+                    fraction(*uploaded_bytes, file_size),
+                    None,
+                )
+                .await;
+            self.emit_notice(TransferNotice::Progress {
                 task_id,
-                file.id,
-                TaskKind::Upload,
-                fraction(*uploaded_bytes, file_size),
-            )
-            .await;
+                file_id: file.id,
+                kind: TaskKind::Upload,
+                progress: tracker.total_fraction(*uploaded_bytes),
+            });
         }
 
         Ok(())
@@ -699,9 +904,7 @@ impl<'a, T: ChunkTransport> TransferEngine<'a, T> {
         downloaded_bytes: &AtomicU64,
     ) -> Result<Vec<PathBuf>> {
         let mut ordered_parts: Vec<Option<PathBuf>> = vec![None; chunks.len()];
-        let concurrency = self.config.max_concurrent_chunks.max(1);
-        let semaphore = Arc::new(Semaphore::new(concurrency));
-        let mut in_flight = FuturesUnordered::new();
+        let mut pending_downloads = Vec::new();
 
         for (pos, chunk) in chunks.iter().enumerate() {
             let chunk_size = u64::try_from(chunk.size).map_err(|_| {
@@ -727,11 +930,41 @@ impl<'a, T: ChunkTransport> TransferEngine<'a, T> {
 
             let tmp_path =
                 staging_path(dest_path, &format!("tmp.{}.{}", file.id, chunk.chunk_index))?;
+            pending_downloads.push((pos, part_path, tmp_path, chunk.telegram_message_id, chunk_size));
+        }
+
+        let reused_bytes = downloaded_bytes.load(Ordering::Relaxed);
+        if reused_bytes > 0 {
+            self.report_progress(
+                task_id,
+                file.id,
+                TaskKind::Download,
+                fraction(reused_bytes, expected_bytes),
+            )
+            .await;
+        }
+
+        let concurrency = self.config.max_concurrent_chunks.max(1);
+        let semaphore = Arc::new(Semaphore::new(concurrency));
+        let tracker = Arc::new(LiveProgressTracker::new(
+            pending_downloads.len(),
+            reused_bytes,
+            expected_bytes,
+            TaskKind::Download,
+            task_id,
+            file.id,
+            self.notifier.clone(),
+        ));
+        let mut in_flight = FuturesUnordered::new();
+
+        for (slot, (pos, part_path, tmp_path, msg_id, chunk_size)) in
+            pending_downloads.into_iter().enumerate()
+        {
             let permit_sem = Arc::clone(&semaphore);
+            let tracker_ref = Arc::clone(&tracker);
             let policy = self.config.retry_policy;
             let notifier = self.notifier.as_ref();
             let file_id = file.id;
-            let msg_id = chunk.telegram_message_id;
 
             in_flight.push(async move {
                 let _permit = permit_sem.acquire().await.map_err(|_| {
@@ -741,9 +974,17 @@ impl<'a, T: ChunkTransport> TransferEngine<'a, T> {
                 let _ = tokio::fs::remove_file(&tmp_path).await;
 
                 if let Err(err) =
-                    retry_on_flood_wait(policy, task_id, file_id, notifier, || async {
-                        let _ = tokio::fs::remove_file(&tmp_path).await;
-                        self.transport.download_chunk(msg_id, &tmp_path).await
+                    retry_on_flood_wait(policy, task_id, file_id, notifier, || {
+                        let tracker_inner = Arc::clone(&tracker_ref);
+                        let tmp_clone = tmp_path.clone();
+                        async move {
+                            let _ = tokio::fs::remove_file(&tmp_clone).await;
+                            self.transport
+                                .download_chunk_with_progress(msg_id, &tmp_clone, move |done| {
+                                    tracker_inner.update_chunk(slot, done, chunk_size);
+                                })
+                                .await
+                        }
                     })
                     .await
                 {
@@ -762,19 +1003,8 @@ impl<'a, T: ChunkTransport> TransferEngine<'a, T> {
                 }
 
                 tokio::fs::rename(&tmp_path, &part_path).await?;
-                Ok::<(usize, PathBuf, u64), CoreError>((pos, part_path, chunk_size))
+                Ok::<(usize, usize, PathBuf, u64), CoreError>((slot, pos, part_path, chunk_size))
             });
-        }
-
-        let reused_bytes = downloaded_bytes.load(Ordering::Relaxed);
-        if reused_bytes > 0 {
-            self.report_progress(
-                task_id,
-                file.id,
-                TaskKind::Download,
-                fraction(reused_bytes, expected_bytes),
-            )
-            .await;
         }
 
         let mut pause_rx = self.pause_signal.clone();
@@ -789,19 +1019,106 @@ impl<'a, T: ChunkTransport> TransferEngine<'a, T> {
                     res
                 }
             };
-            let (pos, part_path, chunk_size) = res?;
+            let (slot, pos, part_path, chunk_size) = res?;
             ordered_parts[pos] = Some(part_path);
+            tracker.mark_chunk_done(slot, chunk_size);
             let total_done = downloaded_bytes.fetch_add(chunk_size, Ordering::Relaxed) + chunk_size;
-            self.report_progress(
+            let _ = self
+                .db
+                .update_task_progress(
+                    task_id,
+                    TaskState::Running,
+                    fraction(total_done, expected_bytes),
+                    None,
+                )
+                .await;
+            self.emit_notice(TransferNotice::Progress {
                 task_id,
-                file.id,
-                TaskKind::Download,
-                fraction(total_done, expected_bytes),
-            )
-            .await;
+                file_id: file.id,
+                kind: TaskKind::Download,
+                progress: tracker.total_fraction(total_done),
+            });
         }
 
         Ok(ordered_parts.into_iter().flatten().collect())
+    }
+}
+
+struct LiveProgressTracker {
+    base_bytes: u64,
+    total_bytes: u64,
+    kind: TaskKind,
+    task_id: i64,
+    file_id: i64,
+    started_at: std::time::Instant,
+    last_emit_ms: AtomicU64,
+    chunk_bytes: Vec<AtomicU64>,
+    notifier: Option<mpsc::UnboundedSender<TransferNotice>>,
+}
+
+impl LiveProgressTracker {
+    fn new(
+        chunk_count: usize,
+        base_bytes: u64,
+        total_bytes: u64,
+        kind: TaskKind,
+        task_id: i64,
+        file_id: i64,
+        notifier: Option<mpsc::UnboundedSender<TransferNotice>>,
+    ) -> Self {
+        Self {
+            base_bytes,
+            total_bytes,
+            kind,
+            task_id,
+            file_id,
+            started_at: std::time::Instant::now(),
+            last_emit_ms: AtomicU64::new(0),
+            chunk_bytes: (0..chunk_count).map(|_| AtomicU64::new(0)).collect(),
+            notifier,
+        }
+    }
+
+    fn update_chunk(&self, slot: usize, done_bytes: u64, max_bytes: u64) {
+        if let Some(cell) = self.chunk_bytes.get(slot) {
+            cell.store(done_bytes.min(max_bytes), Ordering::Relaxed);
+        }
+        if done_bytes == 0 || self.notifier.is_none() {
+            return;
+        }
+        let now_ms = self.started_at.elapsed().as_millis() as u64;
+        let prev = self.last_emit_ms.load(Ordering::Relaxed);
+        if prev == 0 || now_ms.saturating_sub(prev) >= 120 {
+            let next_stamp = now_ms.max(1);
+            if self
+                .last_emit_ms
+                .compare_exchange(prev, next_stamp, Ordering::AcqRel, Ordering::Relaxed)
+                .is_ok()
+            {
+                if let Some(tx) = &self.notifier {
+                    let _ = tx.send(TransferNotice::Progress {
+                        task_id: self.task_id,
+                        file_id: self.file_id,
+                        kind: self.kind,
+                        progress: self.total_fraction(self.base_bytes),
+                    });
+                }
+            }
+        }
+    }
+
+    fn mark_chunk_done(&self, slot: usize, chunk_bytes: u64) {
+        if let Some(cell) = self.chunk_bytes.get(slot) {
+            cell.store(chunk_bytes, Ordering::Relaxed);
+        }
+    }
+
+    fn total_fraction(&self, durable_bytes: u64) -> f64 {
+        let in_flight: u64 = self.chunk_bytes.iter().map(|c| c.load(Ordering::Relaxed)).sum();
+        let combined = (self.base_bytes + in_flight)
+            .max(durable_bytes)
+            .min(self.total_bytes);
+        fraction(combined, self.total_bytes)
     }
 }
 
@@ -1369,5 +1686,81 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(std::fs::read(&dst_path).unwrap(), payload);
+    }
+
+    #[tokio::test]
+    async fn intra_chunk_progress_streams_intermediate_updates_for_single_chunk_file() {
+        struct StreamingProgressTransport;
+
+        impl ChunkTransport for StreamingProgressTransport {
+            async fn upload_chunk(
+                &self,
+                path: &Path,
+                offset: u64,
+                size: u64,
+                file_name: String,
+                caption: String,
+            ) -> Result<i32> {
+                self.upload_chunk_with_progress(path, offset, size, file_name, caption, |_| {})
+                    .await
+            }
+
+            async fn upload_chunk_with_progress<F>(
+                &self,
+                _path: &Path,
+                _offset: u64,
+                size: u64,
+                _file_name: String,
+                _caption: String,
+                on_progress: F,
+            ) -> Result<i32>
+            where
+                F: Fn(u64) + Send + Sync,
+            {
+                on_progress(size / 4);
+                tokio::time::sleep(Duration::from_millis(140)).await;
+                on_progress(size / 2);
+                on_progress(size);
+                Ok(42)
+            }
+
+            async fn upload_bytes(
+                &self,
+                _data: Vec<u8>,
+                _file_name: String,
+                _caption: String,
+            ) -> Result<i32> {
+                Ok(42)
+            }
+
+            async fn download_chunk(&self, _message_id: i32, _dest: &Path) -> Result<()> {
+                Ok(())
+            }
+        }
+
+        let dir = TempDirGuard::new("intra_progress");
+        let src_path = dir.path().join("single_chunk.bin");
+        std::fs::write(&src_path, vec![7u8; 4096]).unwrap();
+
+        let db = Database::connect_in_memory().await.unwrap();
+        let transport = StreamingProgressTransport;
+        let config = ChunkerConfig::new(1024 * 1024).unwrap();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+
+        let engine = TransferEngine::new(&db, &transport, config).with_notifier(tx);
+        engine.upload_file(&src_path, None).await.unwrap();
+
+        let mut reported = Vec::new();
+        while let Ok(notice) = rx.try_recv() {
+            if let TransferNotice::Progress { progress, .. } = notice {
+                reported.push(progress);
+            }
+        }
+
+        assert!(
+            reported.iter().any(|&p| p > 0.0 && p < 1.0),
+            "expected intermediate intra-chunk progress updates, got {reported:?}"
+        );
+        assert_eq!(reported.last().copied(), Some(1.0));
     }
 }

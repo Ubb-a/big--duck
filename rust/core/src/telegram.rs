@@ -1,15 +1,23 @@
 use std::collections::{HashMap, HashSet};
 use std::io::{Cursor, Write};
+use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicI64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicI64, AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, RwLock};
+use std::time::Duration;
 
+use futures_util::stream::{FuturesUnordered, StreamExt};
 use grammers_client::grammers_tl_types as tl;
+use grammers_client::types::media::Uploaded;
 use grammers_client::types::{Chat, Downloadable, LoginToken, PackedChat, PasswordToken, User};
-use grammers_client::{Client, Config, InputMessage, SignInError};
+use grammers_client::{
+    Client, Config, InitParams, InputMessage, ReconnectionPolicy, SignInError,
+};
 use grammers_session::Session;
-use tokio::io::AsyncWriteExt;
-use tracing::{debug, info};
+use rand::rngs::OsRng;
+use rand::RngCore;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
+use tracing::{debug, info, warn};
 
 use crate::error::{CoreError, Result};
 use crate::keyring_store::{
@@ -67,14 +75,75 @@ pub struct StorageChat {
     pub member_count: Option<i32>,
 }
 
+struct MobileReconnectPolicy;
+
+impl ReconnectionPolicy for MobileReconnectPolicy {
+    fn should_retry(&self, attempts: usize) -> ControlFlow<(), Duration> {
+        match attempts {
+            0..=1 => ControlFlow::Continue(Duration::from_millis(250)),
+            2..=4 => ControlFlow::Continue(Duration::from_millis(900)),
+            5..=8 => ControlFlow::Continue(Duration::from_secs(2)),
+            _ => ControlFlow::Break(()),
+        }
+    }
+}
+
+static MOBILE_RECONNECT_POLICY: MobileReconnectPolicy = MobileReconnectPolicy;
+
+macro_rules! with_reconnect {
+    ($self:ident, |$client:ident| $body:block) => {{
+        let mut _attempt = 0u8;
+        loop {
+            let _gen = $self.connect_generation.load(Ordering::Acquire);
+            let $client = $self.client_handle();
+            let _res: Result<_> = async { $body }.await;
+            match _res {
+                Ok(val) => break Ok(val),
+                Err(err) if _attempt == 0 && err.is_transient_network() => {
+                    _attempt = 1;
+                    warn!(error = %err, "Telegram socket disconnected; reconnecting and retrying");
+                    $self.reconnect_if_stale(_gen).await?;
+                }
+                Err(err) => break Err(err),
+            }
+        }
+    }};
+}
+
+const TG_UPLOAD_PART_SIZE: usize = 512 * 1024;
+const TG_BIG_FILE_THRESHOLD: usize = 10 * 1024 * 1024;
+const UPLOAD_POOL_CONNECTIONS: usize = 4;
+const MAX_INFLIGHT_UPLOAD_PARTS: usize = 8;
+
 /// High-level wrapper around `grammers_client::Client` for TeleDrive operations.
 #[derive(Clone)]
 pub struct TelegramClient {
-    client: Client,
+    config: TelegramConfig,
+    client: Arc<RwLock<Client>>,
     account_key: String,
     session_path: PathBuf,
     target_chat_id: Arc<AtomicI64>,
     packed_chats: Arc<Mutex<HashMap<i64, PackedChat>>>,
+    connect_generation: Arc<AtomicU64>,
+    reconnect_lock: Arc<tokio::sync::Mutex<()>>,
+    upload_pool: Arc<tokio::sync::Mutex<Vec<Client>>>,
+    upload_pool_rr: Arc<AtomicUsize>,
+    upload_part_sem: Arc<tokio::sync::Semaphore>,
+}
+
+async fn connect_raw_client(config: &TelegramConfig, account_key: &str) -> Result<Client> {
+    let session = load_or_migrate_session(account_key, &config.session_path)?;
+    Client::connect(Config {
+        session,
+        api_id: config.api_id,
+        api_hash: config.api_hash.clone(),
+        params: InitParams {
+            reconnection_policy: &MOBILE_RECONNECT_POLICY,
+            ..Default::default()
+        },
+    })
+    .await
+    .map_err(CoreError::from)
 }
 
 impl TelegramClient {
@@ -84,26 +153,100 @@ impl TelegramClient {
         config.validate()?;
 
         let account_key = account_key_from_path(&config.session_path);
-        let session = load_or_migrate_session(&account_key, &config.session_path)?;
-
-        let client = Client::connect(Config {
-            session,
-            api_id: config.api_id,
-            api_hash: config.api_hash,
-            params: Default::default(),
-        })
-        .await?;
+        let client = connect_raw_client(&config, &account_key).await?;
 
         let wrapper = Self {
-            client,
+            session_path: config.session_path.clone(),
+            config,
+            client: Arc::new(RwLock::new(client)),
             account_key,
-            session_path: config.session_path,
             target_chat_id: Arc::new(AtomicI64::new(0)),
             packed_chats: Arc::new(Mutex::new(HashMap::new())),
+            connect_generation: Arc::new(AtomicU64::new(0)),
+            reconnect_lock: Arc::new(tokio::sync::Mutex::new(())),
+            upload_pool: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            upload_pool_rr: Arc::new(AtomicUsize::new(0)),
+            upload_part_sem: Arc::new(tokio::sync::Semaphore::new(MAX_INFLIGHT_UPLOAD_PARTS)),
         };
         // Persist newly generated DC auth keys immediately into the OS keyring (or app-private file on mobile).
         wrapper.save_session()?;
         Ok(wrapper)
+    }
+
+    fn client_handle(&self) -> Client {
+        self.client.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// Re-establishes a fresh Telegram MTProto TCP socket if `failed_gen` is still current.
+    pub async fn reconnect_if_stale(&self, failed_gen: u64) -> Result<()> {
+        let _guard = self.reconnect_lock.lock().await;
+        if self.connect_generation.load(Ordering::Acquire) != failed_gen {
+            return Ok(());
+        }
+        let _ = self.save_session();
+        let fresh = connect_raw_client(&self.config, &self.account_key).await?;
+        {
+            let mut guard = self.client.write().unwrap_or_else(|e| e.into_inner());
+            *guard = fresh;
+        }
+        self.upload_pool.lock().await.clear();
+        self.connect_generation.fetch_add(1, Ordering::Release);
+        let _ = self.save_session();
+        info!("Re-established Telegram MTProto session socket");
+        Ok(())
+    }
+
+    async fn connect_upload_worker_client(&self) -> Result<Client> {
+        let bytes = self.client_handle().session().save();
+        let session = Session::load(&bytes).map_err(|err| {
+            CoreError::Keyring(format!("failed to clone active Telegram session: {err}"))
+        })?;
+        Client::connect(Config {
+            session,
+            api_id: self.config.api_id,
+            api_hash: self.config.api_hash.clone(),
+            params: InitParams {
+                reconnection_policy: &MOBILE_RECONNECT_POLICY,
+                update_queue_limit: Some(0),
+                catch_up: false,
+                ..Default::default()
+            },
+        })
+        .await
+        .map_err(CoreError::from)
+    }
+
+    async fn acquire_upload_clients(&self, desired: usize) -> Vec<Client> {
+        let mut pool = self.upload_pool.lock().await;
+        let needed = desired.saturating_sub(pool.len());
+        if needed > 0 {
+            let mut futs = FuturesUnordered::new();
+            for _ in 0..needed {
+                futs.push(self.connect_upload_worker_client());
+            }
+            while let Some(res) = futs.next().await {
+                match res {
+                    Ok(client) => pool.push(client),
+                    Err(err) => {
+                        debug!(error = %err, "Failed to open pooled MTProto upload socket");
+                    }
+                }
+            }
+        }
+        if pool.is_empty() {
+            vec![self.client_handle()]
+        } else {
+            pool.iter().take(desired).cloned().collect()
+        }
+    }
+
+    async fn replace_upload_worker(&self, slot: usize) -> Result<Client> {
+        let fresh = self.connect_upload_worker_client().await?;
+        let mut pool = self.upload_pool.lock().await;
+        if slot < pool.len() {
+            pool[slot] = fresh.clone();
+        }
+        Ok(fresh)
     }
 
     /// Returns the OS keyring account key used to store this session.
@@ -113,7 +256,7 @@ impl TelegramClient {
 
     /// Returns `true` if the current session is already authenticated as a Telegram user.
     pub async fn is_authorized(&self) -> Result<bool> {
-        Ok(self.client.is_authorized().await?)
+        with_reconnect!(self, |client| { Ok(client.is_authorized().await?) })
     }
 
     /// Requests a Telegram login code for the given phone number (international format).
@@ -125,14 +268,16 @@ impl TelegramClient {
             ));
         }
         info!("Requesting Telegram login code");
-        Ok(self.client.request_login_code(trimmed).await?)
+        with_reconnect!(self, |client| {
+            Ok(client.request_login_code(trimmed).await?)
+        })
     }
 
     /// Completes login with the received OTP code, or returns `CoreError::PasswordRequired`
     /// if 2FA is enabled on the account.
     pub async fn sign_in(&self, token: &LoginToken, code: &str) -> Result<User> {
         let user = self
-            .client
+            .client_handle()
             .sign_in(token, code.trim())
             .await
             .map_err(map_sign_in_error)?;
@@ -144,7 +289,7 @@ impl TelegramClient {
     /// Completes 2FA verification using the `PasswordToken` returned in `CoreError::PasswordRequired`.
     pub async fn check_password(&self, token: PasswordToken, password: &str) -> Result<User> {
         let user = self
-            .client
+            .client_handle()
             .check_password(token, password.as_bytes())
             .await
             .map_err(map_sign_in_error)?;
@@ -159,7 +304,7 @@ impl TelegramClient {
     /// Persists the current MTProto session state securely inside the OS keyring,
     /// falling back to the app-private `session_path` file when no OS keyring backend exists (e.g. Android).
     pub fn save_session(&self) -> Result<()> {
-        let bytes = self.client.session().save();
+        let bytes = self.client_handle().session().save();
         match save_session_to_keyring(&self.account_key, &bytes) {
             Ok(()) => {
                 debug!(account_key = %self.account_key, "Saved Telegram session to keyring");
@@ -180,6 +325,9 @@ impl TelegramClient {
 
     /// Removes any persisted Telegram session from keyring and app-private storage.
     pub fn delete_stored_session(&self) {
+        if let Ok(mut pool) = self.upload_pool.try_lock() {
+            pool.clear();
+        }
         let _ = delete_session_from_keyring(&self.account_key);
         let _ = std::fs::remove_file(&self.session_path);
         let tmp_path = self.session_path.with_extension("session.tmp");
@@ -188,16 +336,16 @@ impl TelegramClient {
 
     /// Returns the currently authenticated Telegram user.
     pub async fn get_me(&self) -> Result<User> {
-        self.ensure_authorized().await?;
-        let user = self.client.get_me().await?;
+        let user = with_reconnect!(self, |client| {
+            Self::ensure_authorized_on(&client).await?;
+            Ok(client.get_me().await?)
+        })?;
         let _ = self.save_session();
         Ok(user)
     }
 
     /// Uploads a local file as a document to Saved Messages and returns the resulting message ID.
     pub async fn upload_file(&self, path: &Path, caption: &str) -> Result<i32> {
-        self.ensure_authorized().await?;
-
         if !path.is_file() || path.file_name().is_none() {
             return Err(CoreError::InvalidConfig(format!(
                 "path '{}' must point to an existing file",
@@ -206,43 +354,258 @@ impl TelegramClient {
         }
 
         info!(path = %path.display(), "Uploading file to Telegram");
-        let uploaded = self.client.upload_file(path).await?;
-        self.send_to_saved_messages(InputMessage::text(caption).file(uploaded))
-            .await
+        with_reconnect!(self, |client| {
+            Self::ensure_authorized_on(&client).await?;
+            let uploaded = client.upload_file(path).await?;
+            self.send_message_on(&client, InputMessage::text(caption).file(uploaded))
+                .await
+        })
     }
 
-    /// Uploads an in-memory byte buffer as a document to Saved Messages and returns the message ID.
+    /// Uploads an in-memory byte buffer as a document and returns the message ID.
     pub async fn upload_bytes(
         &self,
         data: Vec<u8>,
         file_name: String,
         caption: &str,
     ) -> Result<i32> {
-        let size = data.len();
-        let mut cursor = Cursor::new(data);
-        self.upload_stream(&mut cursor, size, file_name, caption)
+        self.upload_bytes_with_progress(data, file_name, caption, |_| {})
             .await
     }
 
-    /// Uploads a stream of known byte length as a document to Saved Messages and returns the message ID.
-    pub async fn upload_stream<S: tokio::io::AsyncRead + Unpin>(
+    /// Uploads an in-memory byte buffer while reporting incremental uploaded byte counts.
+    pub async fn upload_bytes_with_progress<F>(
         &self,
-        stream: &mut S,
-        size: usize,
+        data: Vec<u8>,
         file_name: String,
         caption: &str,
-    ) -> Result<i32> {
-        self.ensure_authorized().await?;
+        on_progress: F,
+    ) -> Result<i32>
+    where
+        F: Fn(u64) + Send + Sync,
+    {
+        let size = data.len();
         if size == 0 {
             return Err(CoreError::InvalidConfig(
                 "cannot upload a 0-byte stream to Telegram".to_string(),
             ));
         }
 
-        info!(file_name = %file_name, size, "Uploading chunk stream to Telegram");
-        let uploaded = self.client.upload_stream(stream, size, file_name).await?;
-        self.send_to_saved_messages(InputMessage::text(caption).file(uploaded))
+        info!(file_name = %file_name, size, "Uploading chunk bytes to Telegram");
+        let mut cursor = Cursor::new(data.as_slice());
+        self.upload_stream_with_progress(&mut cursor, size, file_name, caption, on_progress)
             .await
+    }
+
+    /// Uploads a stream of known byte length as a document and returns the message ID.
+    pub async fn upload_stream<S: AsyncRead + Unpin + Send>(
+        &self,
+        stream: &mut S,
+        size: usize,
+        file_name: String,
+        caption: &str,
+    ) -> Result<i32> {
+        self.upload_stream_with_progress(stream, size, file_name, caption, |_| {})
+            .await
+    }
+
+    /// Uploads a stream over pooled MTProto connections in parallel 512 KiB parts and reports live byte progress.
+    pub async fn upload_stream_with_progress<S, F>(
+        &self,
+        stream: &mut S,
+        size: usize,
+        file_name: String,
+        caption: &str,
+        on_progress: F,
+    ) -> Result<i32>
+    where
+        S: AsyncRead + Unpin + Send,
+        F: Fn(u64) + Send + Sync,
+    {
+        if size == 0 {
+            return Err(CoreError::InvalidConfig(
+                "cannot upload a 0-byte stream to Telegram".to_string(),
+            ));
+        }
+
+        with_reconnect!(self, |client| {
+            Self::ensure_authorized_on(&client).await?;
+            Ok(())
+        })?;
+
+        let name = if file_name.is_empty() {
+            "a".to_string()
+        } else {
+            file_name
+        };
+        let file_id = OsRng.next_u64() as i64;
+        let total_parts_usize = size.div_ceil(TG_UPLOAD_PART_SIZE);
+        let total_parts = i32::try_from(total_parts_usize).map_err(|_| {
+            CoreError::InvalidConfig(format!("chunk part count {total_parts_usize} exceeds i32::MAX"))
+        })?;
+        let is_big = size > TG_BIG_FILE_THRESHOLD;
+        let conn_count = total_parts_usize.clamp(1, UPLOAD_POOL_CONNECTIONS);
+        let worker_count = total_parts_usize.clamp(1, MAX_INFLIGHT_UPLOAD_PARTS);
+
+        let clients_init = if conn_count <= 1 {
+            vec![self.client_handle()]
+        } else {
+            self.acquire_upload_clients(conn_count).await
+        };
+        let clients_len = clients_init.len().max(1);
+        let clients = RwLock::new(clients_init);
+
+        info!(
+            file_name = %name,
+            size,
+            total_parts,
+            connections = clients_len,
+            workers = worker_count,
+            "Uploading stream with parallel MTProto part workers"
+        );
+
+        let reader_state = tokio::sync::Mutex::new((0i32, stream, size));
+        let bytes_done = AtomicU64::new(0);
+        let me = self;
+        let clients_ref = &clients;
+        let reader_ref = &reader_state;
+        let done_ref = &bytes_done;
+        let progress_cb = &on_progress;
+
+        let mut tasks = FuturesUnordered::new();
+        for _ in 0..worker_count {
+            tasks.push(async move {
+                loop {
+                    let (part_idx, part_bytes) = {
+                        let mut guard = reader_ref.lock().await;
+                        if guard.0 >= total_parts || guard.2 == 0 {
+                            break;
+                        }
+                        let part_len = guard.2.min(TG_UPLOAD_PART_SIZE);
+                        let mut buf = vec![0u8; part_len];
+                        guard.1.read_exact(&mut buf).await?;
+                        let idx = guard.0;
+                        guard.0 += 1;
+                        guard.2 -= part_len;
+                        (idx, buf)
+                    };
+
+                    let part_len = part_bytes.len() as u64;
+                    let _permit = me.upload_part_sem.acquire().await.map_err(|_| {
+                        CoreError::InvalidConfig("upload part semaphore closed".to_string())
+                    })?;
+
+                    let mut part_attempt = 0u8;
+                    loop {
+                        let slot = me.upload_pool_rr.fetch_add(1, Ordering::Relaxed) % clients_len;
+                        let gen = me.connect_generation.load(Ordering::Acquire);
+                        let handle = {
+                            let guard = clients_ref.read().unwrap_or_else(|e| e.into_inner());
+                            guard[slot].clone()
+                        };
+
+                        let rpc_res = if is_big {
+                            handle
+                                .invoke(&tl::functions::upload::SaveBigFilePart {
+                                    file_id,
+                                    file_part: part_idx,
+                                    file_total_parts: total_parts,
+                                    bytes: part_bytes.clone(),
+                                })
+                                .await
+                        } else {
+                            handle
+                                .invoke(&tl::functions::upload::SaveFilePart {
+                                    file_id,
+                                    file_part: part_idx,
+                                    bytes: part_bytes.clone(),
+                                })
+                                .await
+                        };
+
+                        match rpc_res {
+                            Ok(true) => break,
+                            Ok(false) => {
+                                return Err(CoreError::InvalidConfig(
+                                    "Telegram server rejected uploaded file part".to_string(),
+                                ));
+                            }
+                            Err(inv_err) => {
+                                let core_err = CoreError::from(inv_err);
+                                if let Some(wait_secs) = core_err.flood_wait_seconds() {
+                                    if wait_secs <= 60 && part_attempt < 3 {
+                                        part_attempt += 1;
+                                        tokio::time::sleep(Duration::from_secs(wait_secs)).await;
+                                        continue;
+                                    }
+                                }
+                                if core_err.is_transient_network() && part_attempt < 3 {
+                                    part_attempt += 1;
+                                    warn!(
+                                        part = part_idx,
+                                        attempt = part_attempt,
+                                        error = %core_err,
+                                        "Telegram upload worker socket disconnected; reconnecting worker for part retry"
+                                    );
+                                    if conn_count <= 1 {
+                                        let _ = me.reconnect_if_stale(gen).await;
+                                        let fresh = me.client_handle();
+                                        let mut guard = clients_ref
+                                            .write()
+                                            .unwrap_or_else(|e| e.into_inner());
+                                        guard[0] = fresh;
+                                    } else if let Ok(fresh) = me.replace_upload_worker(slot).await {
+                                        let mut guard = clients_ref
+                                            .write()
+                                            .unwrap_or_else(|e| e.into_inner());
+                                        if slot < guard.len() {
+                                            guard[slot] = fresh;
+                                        }
+                                    }
+                                    tokio::time::sleep(Duration::from_millis(
+                                        250 * u64::from(part_attempt),
+                                    ))
+                                    .await;
+                                    continue;
+                                }
+                                return Err(core_err);
+                            }
+                        }
+                    }
+
+                    let done = done_ref.fetch_add(part_len, Ordering::Relaxed) + part_len;
+                    progress_cb(done);
+                }
+                Ok::<(), CoreError>(())
+            });
+        }
+
+        while let Some(res) = tasks.next().await {
+            res?;
+        }
+
+        let raw: tl::enums::InputFile = if is_big {
+            tl::types::InputFileBig {
+                id: file_id,
+                parts: total_parts,
+                name,
+            }
+            .into()
+        } else {
+            tl::types::InputFile {
+                id: file_id,
+                parts: total_parts,
+                name,
+                md5_checksum: String::new(),
+            }
+            .into()
+        };
+        let uploaded = Uploaded::from_raw(raw);
+
+        with_reconnect!(self, |client| {
+            self.send_message_on(&client, InputMessage::text(caption).file(uploaded.clone()))
+                .await
+        })
     }
 
     /// Selects a Telegram Group/Channel ID (`Some(id)`) or Saved Messages (`None`).
@@ -264,28 +627,30 @@ impl TelegramClient {
     /// Lists only Telegram groups and channels where the user is the owner/creator
     /// or has active admin posting rights (never random public subscriptions).
     pub async fn list_storage_chats(&self) -> Result<Vec<StorageChat>> {
-        self.ensure_authorized().await?;
-        let mut dialogs = self.client.iter_dialogs();
-        let mut chats = Vec::new();
-        let mut seen = HashSet::new();
-        let mut scanned = 0usize;
-        while let Some(dialog) = dialogs.next().await? {
-            scanned += 1;
-            let chat = dialog.chat();
-            if let Some(sc) = storage_chat_from_dialog_chat(chat) {
-                if seen.insert(sc.id) {
-                    if let Ok(mut cache) = self.packed_chats.lock() {
-                        cache.insert(sc.id, chat.pack());
+        with_reconnect!(self, |client| {
+            Self::ensure_authorized_on(&client).await?;
+            let mut dialogs = client.iter_dialogs();
+            let mut chats = Vec::new();
+            let mut seen = HashSet::new();
+            let mut scanned = 0usize;
+            while let Some(dialog) = dialogs.next().await? {
+                scanned += 1;
+                let chat = dialog.chat();
+                if let Some(sc) = storage_chat_from_dialog_chat(chat) {
+                    if seen.insert(sc.id) {
+                        if let Ok(mut cache) = self.packed_chats.lock() {
+                            cache.insert(sc.id, chat.pack());
+                        }
+                        chats.push(sc);
                     }
-                    chats.push(sc);
+                }
+                if scanned >= 400 || chats.len() >= 150 {
+                    break;
                 }
             }
-            if scanned >= 400 || chats.len() >= 150 {
-                break;
-            }
-        }
-        chats.sort_by_key(|c| (!c.is_creator, !c.is_private, c.title.to_lowercase()));
-        Ok(chats)
+            chats.sort_by_key(|c| (!c.is_creator, !c.is_private, c.title.to_lowercase()));
+            Ok(chats)
+        })
     }
 
     /// Creates a new private Telegram supergroup or broadcast channel dedicated to BIG DUCK storage.
@@ -296,21 +661,22 @@ impl TelegramClient {
                 "vault name must not be empty".to_string(),
             ));
         }
-        self.ensure_authorized().await?;
-        let updates = self
-            .client
-            .invoke(&tl::functions::channels::CreateChannel {
-                broadcast: !is_megagroup,
-                megagroup: is_megagroup,
-                for_import: false,
-                forum: false,
-                title: trimmed.to_string(),
-                about: "BIG DUCK Encrypted Vault".to_string(),
-                geo_point: None,
-                address: None,
-                ttl_period: None,
-            })
-            .await?;
+        let updates = with_reconnect!(self, |client| {
+            Self::ensure_authorized_on(&client).await?;
+            Ok(client
+                .invoke(&tl::functions::channels::CreateChannel {
+                    broadcast: !is_megagroup,
+                    megagroup: is_megagroup,
+                    for_import: false,
+                    forum: false,
+                    title: trimmed.to_string(),
+                    about: "BIG DUCK Encrypted Vault".to_string(),
+                    geo_point: None,
+                    address: None,
+                    ttl_period: None,
+                })
+                .await?)
+        })?;
 
         let raw_chats = match updates {
             tl::enums::Updates::Updates(u) => u.chats,
@@ -351,14 +717,14 @@ impl TelegramClient {
         })
     }
 
-    async fn resolve_target_chat(&self) -> Result<PackedChat> {
+    async fn resolve_target_chat_on(&self, client: &Client) -> Result<PackedChat> {
         if let Some(target_id) = self.target_chat_id() {
             if let Ok(cache) = self.packed_chats.lock() {
                 if let Some(packed) = cache.get(&target_id).copied() {
                     return Ok(packed);
                 }
             }
-            let mut dialogs = self.client.iter_dialogs();
+            let mut dialogs = client.iter_dialogs();
             while let Some(dialog) = dialogs.next().await? {
                 let chat = dialog.chat();
                 if chat.id() == target_id {
@@ -373,12 +739,12 @@ impl TelegramClient {
                 "Target Telegram group/channel {target_id} was not found in dialogs"
             )));
         }
-        Ok(self.client.get_me().await?.pack())
+        Ok(client.get_me().await?.pack())
     }
 
-    async fn send_to_saved_messages(&self, input: InputMessage) -> Result<i32> {
-        let target = self.resolve_target_chat().await?;
-        let message = self.client.send_message(target, input).await?;
+    async fn send_message_on(&self, client: &Client, input: InputMessage) -> Result<i32> {
+        let target = self.resolve_target_chat_on(client).await?;
+        let message = client.send_message(target, input).await?;
 
         let msg_id = message.id();
         self.save_session()?;
@@ -392,56 +758,77 @@ impl TelegramClient {
 
     /// Downloads the media attached to `message_id` from the active storage chat into `dest`.
     pub async fn download_file(&self, message_id: i32, dest: &Path) -> Result<()> {
-        self.ensure_authorized().await?;
+        self.download_file_with_progress(message_id, dest, |_| {})
+            .await
+    }
 
+    /// Downloads the media attached to `message_id` while reporting downloaded byte counts.
+    pub async fn download_file_with_progress<F>(
+        &self,
+        message_id: i32,
+        dest: &Path,
+        on_progress: F,
+    ) -> Result<()>
+    where
+        F: Fn(u64) + Send + Sync,
+    {
         if let Some(parent) = dest.parent().filter(|p| !p.as_os_str().is_empty()) {
             tokio::fs::create_dir_all(parent).await?;
         }
 
-        let target = self.resolve_target_chat().await?;
-        let messages = self.client.get_messages_by_id(target, &[message_id]).await?;
-        let message = messages
-            .into_iter()
-            .next()
-            .flatten()
-            .ok_or(CoreError::MessageNotFound(message_id))?;
+        with_reconnect!(self, |client| {
+            Self::ensure_authorized_on(&client).await?;
+            let target = self.resolve_target_chat_on(&client).await?;
+            let messages = client.get_messages_by_id(target, &[message_id]).await?;
+            let message = messages
+                .into_iter()
+                .next()
+                .flatten()
+                .ok_or(CoreError::MessageNotFound(message_id))?;
 
-        let media = message.media().ok_or(CoreError::MediaMissing(message_id))?;
+            let media = message.media().ok_or(CoreError::MediaMissing(message_id))?;
 
-        info!(message_id, dest = %dest.display(), "Downloading file from Telegram");
-        let downloadable = Downloadable::Media(media);
-        if downloadable.to_raw_input_location().is_some() {
-            let mut download = self.client.iter_download(&downloadable);
-            let mut out = tokio::fs::File::create(dest).await?;
-            while let Some(chunk) = download.next().await? {
-                out.write_all(&chunk).await?;
+            info!(message_id, dest = %dest.display(), "Downloading file from Telegram");
+            let downloadable = Downloadable::Media(media);
+            if downloadable.to_raw_input_location().is_some() {
+                let mut download = client.iter_download(&downloadable);
+                let mut out = tokio::fs::File::create(dest).await?;
+                let mut done = 0u64;
+                on_progress(0);
+                while let Some(chunk) = download.next().await? {
+                    out.write_all(&chunk).await?;
+                    done += chunk.len() as u64;
+                    on_progress(done);
+                }
+                out.flush().await?;
+                out.sync_all().await?;
+            } else {
+                client.download_media(&downloadable, dest).await?;
             }
-            out.flush().await?;
-            out.sync_all().await?;
-        } else {
-            self.client.download_media(&downloadable, dest).await?;
-        }
-        info!(message_id, dest = %dest.display(), "Download completed");
-        Ok(())
+            info!(message_id, dest = %dest.display(), "Download completed");
+            Ok(())
+        })
     }
 
     /// Searches recent storage chat history for the newest encrypted index backup document.
     pub async fn find_latest_backup_message_id(&self) -> Result<Option<i32>> {
-        self.ensure_authorized().await?;
-        let target = self.resolve_target_chat().await?;
-        let mut messages = self.client.iter_messages(target).limit(200);
+        with_reconnect!(self, |client| {
+            Self::ensure_authorized_on(&client).await?;
+            let target = self.resolve_target_chat_on(&client).await?;
+            let mut messages = client.iter_messages(target).limit(200);
 
-        while let Some(message) = messages.next().await? {
-            if message.text().starts_with(BACKUP_CAPTION_PREFIX) && message.media().is_some() {
-                return Ok(Some(message.id()));
+            while let Some(message) = messages.next().await? {
+                if message.text().starts_with(BACKUP_CAPTION_PREFIX) && message.media().is_some() {
+                    return Ok(Some(message.id()));
+                }
             }
-        }
 
-        Ok(None)
+            Ok(None)
+        })
     }
 
-    async fn ensure_authorized(&self) -> Result<()> {
-        if !self.client.is_authorized().await? {
+    async fn ensure_authorized_on(client: &Client) -> Result<()> {
+        if !client.is_authorized().await? {
             return Err(CoreError::NotAuthorized);
         }
         Ok(())

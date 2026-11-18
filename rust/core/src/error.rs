@@ -100,6 +100,30 @@ impl CoreError {
             _ => None,
         }
     }
+
+    /// Returns `true` when the error was caused by a dropped or reset mobile TCP socket
+    /// (such as iOS `ENOTCONN` os error 57 after backgrounding or opening a system sheet).
+    pub fn is_transient_network(&self) -> bool {
+        match self {
+            Self::Invocation(InvocationError::Read(_) | InvocationError::Dropped) => true,
+            Self::Io(io_err) => {
+                matches!(
+                    io_err.kind(),
+                    std::io::ErrorKind::NotConnected
+                        | std::io::ErrorKind::ConnectionReset
+                        | std::io::ErrorKind::ConnectionAborted
+                        | std::io::ErrorKind::BrokenPipe
+                        | std::io::ErrorKind::TimedOut
+                        | std::io::ErrorKind::UnexpectedEof
+                        | std::io::ErrorKind::Interrupted
+                ) || matches!(
+                    io_err.raw_os_error(),
+                    Some(54 | 57 | 60 | 61 | 65 | 104 | 107 | 110)
+                )
+            }
+            _ => false,
+        }
+    }
 }
 
 fn flood_seconds_from_invocation(inv: &InvocationError) -> Option<u64> {
@@ -158,5 +182,17 @@ mod tests {
             "file not found",
         ));
         assert_eq!(normal_io.flood_wait_seconds(), None);
+    }
+
+    #[test]
+    fn transient_network_detection_catches_ios_enotconn() {
+        let ios_disconnect = CoreError::Io(std::io::Error::from_raw_os_error(57));
+        assert!(ios_disconnect.is_transient_network());
+
+        let not_found = CoreError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "missing",
+        ));
+        assert!(!not_found.is_transient_network());
     }
 }

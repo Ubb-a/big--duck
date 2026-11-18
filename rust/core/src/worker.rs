@@ -721,14 +721,25 @@ impl WorkerState {
         let event_tx = self.event_tx.clone();
         let refresh_tx = self.refresh_tx.clone();
         tokio::spawn(async move {
+            let mut announced_tasks = HashSet::<i64>::new();
             while let Some(ev) = queue_rx.recv().await {
-                let should_refresh = matches!(
-                    ev,
-                    QueueEvent::TaskStarted { .. }
-                        | QueueEvent::TaskCompleted { .. }
-                        | QueueEvent::TaskPaused { .. }
-                        | QueueEvent::TaskFailed { .. }
-                );
+                let first_progress_refresh = match &ev {
+                    QueueEvent::TaskProgress { task_id, .. } => announced_tasks.insert(*task_id),
+                    QueueEvent::TaskCompleted { task_id, .. }
+                    | QueueEvent::TaskPaused { task_id, .. } => {
+                        announced_tasks.remove(task_id);
+                        false
+                    }
+                    _ => false,
+                };
+                let should_refresh = first_progress_refresh
+                    || matches!(
+                        ev,
+                        QueueEvent::TaskStarted { .. }
+                            | QueueEvent::TaskCompleted { .. }
+                            | QueueEvent::TaskPaused { .. }
+                            | QueueEvent::TaskFailed { .. }
+                    );
                 if event_tx.send(CoreEvent::Queue(ev)).is_err() {
                     break;
                 }

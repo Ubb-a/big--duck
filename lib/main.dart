@@ -314,6 +314,16 @@ class _VaultMainStage extends StatelessWidget {
     final fileSizesById = <int, int>{
       for (final f in catalogFiles) f.id: f.size,
     };
+    for (final t in controller.snapshot.tasks) {
+      final name = fileNamesById.putIfAbsent(
+        t.fileId,
+        () => controller.fileNameForId(t.fileId),
+      );
+      fileSizesById.putIfAbsent(
+        t.fileId,
+        () => controller.fileSizeForId(t.fileId, fallbackName: name),
+      );
+    }
 
     const bottomPad = 96.0;
     final pages = [
@@ -331,6 +341,7 @@ class _VaultMainStage extends StatelessWidget {
         tasks: controller.snapshot.tasks,
         fileNamesById: fileNamesById,
         fileSizesById: fileSizesById,
+        taskSpeedsById: controller.taskSpeedsById,
         chunkSizeMiB: controller.chunkSizeMiB,
         floodWaitSeconds: controller.floodWaitSeconds,
         bottomPadding: bottomPad,

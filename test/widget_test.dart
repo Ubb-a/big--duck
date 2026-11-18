@@ -458,4 +458,65 @@ void main() {
 
     await tester.pump(const Duration(seconds: 4));
   });
+
+  testWidgets(
+      'Transfers screen updates live progress %, MB/s speed, and ETA from QueueUpdateEvent stream',
+      (WidgetTester tester) async {
+    var clockNow = DateTime(2026, 11, 18, 12, 0, 0);
+    final controller = AppController(isArabic: false)
+      ..debugPrimeSavedSession(fullName: 'Transfer Tester')
+      ..debugSetClock(() => clockNow);
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(BigDuckApp(controller: controller));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('nav_transfers')));
+    await tester.pumpAndSettle();
+
+    // Initial 0% progress event seeds running transfer card with preparing label.
+    controller.debugApplyBridgeEvent(
+      const QueueUpdateEvent(
+        event: 'task_progress',
+        taskId: 77,
+        fileId: 102,
+        kind: 'upload',
+        progress: 0.0,
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 280));
+    expect(find.text('Studio_Backup_2026.zip'), findsOneWidget);
+    expect(find.text('0%'), findsOneWidget);
+    expect(find.textContaining('Preparing & encrypting...'), findsOneWidget);
+
+    // Intermediate intra-chunk progress computes live speed (MB/s) and ETA.
+    clockNow = clockNow.add(const Duration(seconds: 2));
+    controller.debugApplyBridgeEvent(
+      const QueueUpdateEvent(
+        event: 'task_progress',
+        taskId: 77,
+        fileId: 102,
+        kind: 'upload',
+        progress: 0.25,
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 280));
+    expect(find.text('25%'), findsOneWidget);
+    expect(find.textContaining('MB/s'), findsOneWidget);
+    expect(find.textContaining('left'), findsOneWidget);
+
+    clockNow = clockNow.add(const Duration(seconds: 2));
+    controller.debugApplyBridgeEvent(
+      const QueueUpdateEvent(
+        event: 'task_progress',
+        taskId: 77,
+        fileId: 102,
+        kind: 'upload',
+        progress: 0.60,
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 280));
+    expect(find.text('60%'), findsOneWidget);
+    expect(find.textContaining('chunk 2 of 3'), findsOneWidget);
+  });
 }
