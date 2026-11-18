@@ -1,3 +1,6 @@
+import 'dart:math' as math;
+
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../state/app_controller.dart';
@@ -7,33 +10,69 @@ import '../widgets/vault_surface.dart';
 class LockScreen extends StatefulWidget {
   final AppPalette palette;
   final AppController controller;
+  final bool initialFailed;
 
   const LockScreen({
     super.key,
     required this.palette,
     required this.controller,
+    this.initialFailed = false,
   });
 
   @override
   State<LockScreen> createState() => _LockScreenState();
 }
 
-class _LockScreenState extends State<LockScreen> {
+class _LockScreenState extends State<LockScreen> with TickerProviderStateMixin {
+  late final AnimationController _breathCtrl;
+  late final AnimationController _shakeCtrl;
   bool _authenticating = false;
+  late bool _failed = widget.initialFailed;
 
   @override
   void initState() {
     super.initState();
+    _breathCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 4),
+    );
+    _shakeCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 360),
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _unlock();
+      if (!mounted) return;
+      if (!MediaQuery.disableAnimationsOf(context)) {
+        _breathCtrl.repeat(reverse: true);
+      }
+      if (!widget.initialFailed) {
+        _unlock();
+      }
     });
+  }
+
+  @override
+  void dispose() {
+    _breathCtrl.dispose();
+    _shakeCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _unlock() async {
     if (_authenticating) return;
-    setState(() => _authenticating = true);
+    setState(() {
+      _authenticating = true;
+      _failed = false;
+    });
     try {
-      await widget.controller.unlockWithBiometrics();
+      final ok = await widget.controller.unlockWithBiometrics();
+      if (!mounted) return;
+      if (!ok) {
+        setState(() => _failed = true);
+        if (!MediaQuery.disableAnimationsOf(context)) {
+          _shakeCtrl.forward(from: 0.0);
+        }
+      }
     } finally {
       if (mounted) {
         setState(() => _authenticating = false);
@@ -41,177 +80,229 @@ class _LockScreenState extends State<LockScreen> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
+  void _showPasscodeSheet() {
     final p = widget.palette;
     final ctrl = widget.controller;
     final s = ctrl.strings;
+    final passCtrl = TextEditingController();
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: s.ar ? TextDirection.rtl : TextDirection.ltr,
+        child: VaultDialogShell(
+          palette: p,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                s.usePasscodeCta,
+                textAlign: TextAlign.center,
+                style: VaultText.heading(p, s.ar, size: 19),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                s.ar
+                    ? 'استخدم التحقق الأمني للنظام أو سجّل الخروج لإعادة ربط الجلسة.'
+                    : 'Use system credential verification or log out to reset this device session.',
+                textAlign: TextAlign.center,
+                style: VaultText.body(p, s.ar, size: 13, color: p.secondary),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: passCtrl,
+                obscureText: true,
+                keyboardType: TextInputType.number,
+                textAlign: TextAlign.center,
+                style: VaultText.mono(p, size: 16, color: p.ink),
+                decoration: InputDecoration(
+                  hintText: '••••',
+                  hintStyle: VaultText.mono(p, size: 16, color: p.muted),
+                  filled: true,
+                  fillColor: p.glassFill,
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(VaultRadii.tile),
+                    borderSide: BorderSide(color: p.glassBorder),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(VaultRadii.tile),
+                    borderSide: BorderSide(color: p.glassBorder),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(VaultRadii.tile),
+                    borderSide: BorderSide(color: p.champagne),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              VaultPillButton(
+                palette: p,
+                isArabic: s.ar,
+                label: s.unlockVault,
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  _unlock();
+                },
+              ),
+              const SizedBox(height: 10),
+              VaultPillButton(
+                palette: p,
+                isArabic: s.ar,
+                variant: VaultPillVariant.danger,
+                height: 44,
+                label: s.logOut,
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  ctrl.logout();
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    ).whenComplete(passCtrl.dispose);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.palette;
+    final s = widget.controller.strings;
+    final motion = vaultMotion(context, 250);
 
     return Scaffold(
-      backgroundColor: p.ground,
-      body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Archival Masthead
-            Container(
-              padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
-              decoration: BoxDecoration(
-                color: p.surface,
-                border: Border(bottom: BorderSide(color: p.rule, width: 1)),
-              ),
-              child: Row(
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(VaultRadii.sm),
-                    child: Image.asset(
-                      'assets/icon.png',
-                      width: 34,
-                      height: 34,
-                      fit: BoxFit.cover,
-                    ),
+      backgroundColor: p.canvas,
+      body: VaultCanvasBackdrop(
+        palette: p,
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+            child: Column(
+              children: [
+                const SizedBox(height: 18),
+                Text(
+                  s.appTitle,
+                  style: VaultText.mono(
+                    p,
+                    size: 12,
+                    weight: FontWeight.w600,
+                    color: p.secondary,
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          s.appTitle,
-                          style: VaultText.heading(p, s.ar, size: 15),
-                        ),
-                        Text(
-                          ctrl.displayAccountName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: VaultText.body(
-                            p,
-                            s.ar,
-                            size: 12,
-                            color: p.muted,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Icon(Icons.lock_outline, size: 18, color: p.signal),
-                ],
-              ),
-            ),
+                ),
+                const Spacer(),
 
-            const Spacer(flex: 2),
+                AnimatedBuilder(
+                  animation: Listenable.merge([_breathCtrl, _shakeCtrl]),
+                  builder: (context, child) {
+                    final breath = _breathCtrl.value;
+                    final shakeDx = _shakeCtrl.isAnimating
+                        ? math.sin(_shakeCtrl.value * math.pi * 4) * 8
+                        : 0.0;
+                    final ringColor = _failed
+                        ? p.coral
+                        : Color.lerp(
+                              p.champagne.withValues(alpha: 0.28),
+                              p.champagne.withValues(alpha: 0.72),
+                              breath,
+                            ) ??
+                            p.champagne;
 
-            // Asymmetric Vault Door Block
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(Icons.fingerprint, size: 42, color: p.signal),
-                  const SizedBox(height: 18),
-                  Text(
-                    s.vaultLockedTitle,
-                    style: VaultText.display(p, s.ar, size: 30),
-                  ),
-                  const SizedBox(height: 12),
-                  IntrinsicHeight(
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Container(
-                          width: 3,
+                    return Transform.translate(
+                      offset: Offset(shakeDx, 0),
+                      child: VaultTap(
+                        onTap: _authenticating ? null : _unlock,
+                        child: Container(
+                          width: 160,
+                          height: 160,
                           decoration: BoxDecoration(
-                            color: p.signal,
-                            borderRadius: BorderRadius.circular(VaultRadii.pill),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            s.vaultLockedSub,
-                            style: VaultText.body(
-                              p,
-                              s.ar,
-                              size: 14.5,
-                              color: p.muted,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            const Spacer(flex: 3),
-
-            // Pinned Footer Action
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  SizedBox(
-                    height: 50,
-                    child: VaultTap(
-                      onTap: _authenticating ? null : _unlock,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: p.signal,
-                          borderRadius: BorderRadius.circular(VaultRadii.sm),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            if (_authenticating)
-                              SizedBox(
-                                width: 17,
-                                height: 17,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: p.signalInk,
-                                ),
-                              )
-                            else
-                              Icon(Icons.lock_open_outlined,
-                                  size: 18, color: p.signalInk),
-                            const SizedBox(width: 8),
-                            Text(
-                              s.unlockVault,
-                              style: VaultText.body(
-                                p,
-                                s.ar,
-                                size: 15,
-                                weight: FontWeight.w700,
-                                color: p.signalInk,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: (_failed ? p.coral : p.champagne)
+                                    .withValues(
+                                        alpha: _failed
+                                            ? 0.28
+                                            : (0.08 + breath * 0.14)),
+                                blurRadius: 36 + (breath * 16),
+                                spreadRadius: 2 + (breath * 4),
                               ),
+                            ],
+                          ),
+                          child: VaultSurface(
+                            palette: p,
+                            borderRadius: VaultRadii.pill,
+                            elevated: true,
+                            borderColor: ringColor,
+                            child: Center(
+                              child: _authenticating
+                                  ? SizedBox(
+                                      width: 34,
+                                      height: 34,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: p.champagne,
+                                      ),
+                                    )
+                                  : Icon(
+                                      Icons.fingerprint_rounded,
+                                      size: 56,
+                                      color: _failed ? p.coral : p.champagne,
+                                    ),
                             ),
-                          ],
+                          ),
                         ),
                       ),
+                    );
+                  },
+                ),
+
+                const SizedBox(height: 28),
+                Text(
+                  s.vaultLockedHeadline,
+                  textAlign: TextAlign.center,
+                  style: VaultText.heading(p, s.ar, size: 22),
+                ),
+                const SizedBox(height: 8),
+                AnimatedSwitcher(
+                  duration: motion,
+                  child: Text(
+                    _failed ? s.tryAgainText : s.vaultLockedSub,
+                    key: ValueKey(_failed),
+                    textAlign: TextAlign.center,
+                    style: VaultText.body(
+                      p,
+                      s.ar,
+                      size: 13.5,
+                      color: _failed ? p.coral : p.secondary,
+                      applyArabicScale: false,
                     ),
                   ),
-                  const SizedBox(height: 10),
-                  Center(
-                    child: TextButton(
-                      onPressed: () => ctrl.logout(),
-                      child: Text(
-                        s.signOut,
-                        style: VaultText.body(
-                          p,
-                          s.ar,
-                          size: 13,
-                          weight: FontWeight.w600,
-                          color: p.muted,
-                        ),
-                      ),
+                ),
+
+                const Spacer(),
+                TextButton(
+                  onPressed: () {
+                    HapticFeedback.selectionClick();
+                    _showPasscodeSheet();
+                  },
+                  child: Text(
+                    s.usePasscodeCta,
+                    style: VaultText.body(
+                      p,
+                      s.ar,
+                      size: 14,
+                      weight: FontWeight.w500,
+                      color: p.secondary,
+                      applyArabicScale: false,
                     ),
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(height: 8),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

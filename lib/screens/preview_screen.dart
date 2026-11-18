@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
@@ -45,7 +46,6 @@ class _PreviewScreenState extends State<PreviewScreen>
   int _currentPage = 1;
   int _totalPages = 0;
 
-  // Image darkroom viewer state
   late final TransformationController _transformController;
   late final AnimationController _zoomAnimController;
   Animation<Matrix4>? _zoomAnimation;
@@ -55,13 +55,11 @@ class _PreviewScreenState extends State<PreviewScreen>
   bool _showChrome = true;
   _ImageBackdrop _backdrop = _ImageBackdrop.dark;
 
-  // Image pixel dimensions resolved from local file
   int? _imageWidth;
   int? _imageHeight;
   ImageStream? _metadataStream;
   ImageStreamListener? _metadataListener;
 
-  // Video & Audio darkroom playback state
   VideoPlayerController? _videoController;
   bool _videoReady = false;
   bool _videoMuted = false;
@@ -83,7 +81,7 @@ class _PreviewScreenState extends State<PreviewScreen>
       ..addListener(_onTransformChanged);
     _zoomAnimController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 180),
+      duration: const Duration(milliseconds: 220),
     )..addListener(() {
         final anim = _zoomAnimation;
         if (anim != null) {
@@ -301,7 +299,10 @@ class _PreviewScreenState extends State<PreviewScreen>
 
   Future<void> _shareFile() async {
     final path = _localPath;
-    if (path == null) return;
+    if (path == null) {
+      widget.controller.downloadFile(widget.file);
+      return;
+    }
     HapticFeedback.selectionClick();
     await SharePlus.instance.share(
       ShareParams(files: [XFile(path)], text: widget.file.name),
@@ -323,7 +324,7 @@ class _PreviewScreenState extends State<PreviewScreen>
   }
 
   void _animateTransformTo(Matrix4 target) {
-    final duration = vaultMotion(context, 180);
+    final duration = vaultMotion(context, 250);
     if (duration == Duration.zero) {
       _transformController.value = target;
       return;
@@ -334,7 +335,7 @@ class _PreviewScreenState extends State<PreviewScreen>
     ).animate(
       CurvedAnimation(
         parent: _zoomAnimController,
-        curve: Curves.easeOutCubic,
+        curve: Curves.easeOut,
       ),
     );
     _zoomAnimController.forward(from: 0.0);
@@ -378,153 +379,285 @@ class _PreviewScreenState extends State<PreviewScreen>
     });
   }
 
-  void _showInspectorSheet(AppPalette v, bool isAr) {
+  void _showDarkroomMenu(AppPalette v, bool isAr, Size viewport) {
+    HapticFeedback.selectionClick();
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Directionality(
+        textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
+        child: VaultSheetShell(
+          palette: v,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (isImageFile(widget.file.mimeType, widget.file.name)) ...[
+                _DarkMenuTile(
+                  palette: v,
+                  isArabic: isAr,
+                  icon: Icons.rotate_90_degrees_cw_outlined,
+                  title: isAr ? 'تدوير 90°' : 'Rotate 90°',
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _rotateImage();
+                  },
+                ),
+                const SizedBox(height: 8),
+                _DarkMenuTile(
+                  palette: v,
+                  isArabic: isAr,
+                  icon: Icons.layers_outlined,
+                  title: isAr ? 'تغيير خلفية المعاينة' : 'Cycle canvas backdrop',
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _cycleBackdrop();
+                  },
+                ),
+                const SizedBox(height: 8),
+                _DarkMenuTile(
+                  palette: v,
+                  isArabic: isAr,
+                  icon: Icons.zoom_in_rounded,
+                  title: isAr ? 'تبديل التكبير' : 'Toggle 100% / 200% zoom',
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _toggleZoomPill(viewport);
+                  },
+                ),
+                const SizedBox(height: 8),
+              ],
+              _DarkMenuTile(
+                palette: v,
+                isArabic: isAr,
+                icon: Icons.info_outline_rounded,
+                title: isAr ? 'بيانات الملف المشفر' : 'Encrypted file info',
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showInfoSheet(v, isAr);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showDeleteConfirm(AppPalette v, bool isAr) {
+    final s = widget.controller.strings;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
+        child: VaultDialogShell(
+          palette: v,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(s.deleteConfirmTitle,
+                  style: VaultText.heading(v, isAr, size: 18)),
+              const SizedBox(height: 10),
+              Text(
+                s.deleteConfirmDesc(1),
+                style: VaultText.body(v, isAr, size: 13.5, color: v.secondary),
+              ),
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  Expanded(
+                    child: VaultPillButton(
+                      palette: v,
+                      isArabic: isAr,
+                      variant: VaultPillVariant.secondary,
+                      height: 44,
+                      label: s.cancel,
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: VaultPillButton(
+                      palette: v,
+                      isArabic: isAr,
+                      variant: VaultPillVariant.danger,
+                      height: 44,
+                      label: s.deleteAction,
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        widget.controller.deleteFile(widget.file.id);
+                        Navigator.pop(context);
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showInfoSheet(AppPalette v, bool isAr) {
     HapticFeedback.lightImpact();
+    final s = widget.controller.strings;
+    final chunkBytes = widget.controller.chunkSizeMiB * 1024 * 1024;
+    final chunkCount = widget.file.size <= 0
+        ? 1
+        : (widget.file.size / chunkBytes).ceil().clamp(1, 9999);
+    final sha = widget.file.sha256;
+    final truncatedSha =
+        sha.length > 22 ? '${sha.substring(0, 12)}…${sha.substring(sha.length - 10)}' : sha;
+
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (ctx) => VaultSheetShell(
-        palette: v,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  iconForMimeOrName(widget.file.mimeType, widget.file.name),
-                  size: 22,
-                  color: v.cobalt,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        widget.file.name,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: VaultText.heading(v, isAr, size: 15),
+      builder: (ctx) => Directionality(
+        textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
+        child: VaultSheetShell(
+          palette: v,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: v.glassFill,
+                      borderRadius: BorderRadius.circular(VaultRadii.tile),
+                      border: Border.all(color: v.glassBorder),
+                    ),
+                    alignment: Alignment.center,
+                    child: Icon(
+                      iconForMimeOrName(widget.file.mimeType, widget.file.name),
+                      size: 20,
+                      color: v.champagne,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.file.name,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: VaultText.heading(v, isAr, size: 16),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          widget.file.mimeType,
+                          style: VaultText.mono(v, size: 11, color: v.secondary),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              VaultSurface(
+                palette: v,
+                borderRadius: VaultRadii.md,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                child: Column(
+                  children: [
+                    _InspectorRow(
+                      palette: v,
+                      isArabic: isAr,
+                      label: isAr ? 'الحجم' : 'File size',
+                      value: formatBytes(widget.file.size),
+                      showDivider: false,
+                    ),
+                    if (_imageWidth != null && _imageHeight != null)
+                      _InspectorRow(
+                        palette: v,
+                        isArabic: isAr,
+                        label: isAr ? 'الأبعاد' : 'Dimensions',
+                        value: '$_imageWidth×$_imageHeight px',
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        isAr ? 'بيانات الملف الأرشيفية' : 'Archival file manifest',
-                        style: VaultText.body(v, isAr, size: 12, color: v.muted),
+                    _InspectorRow(
+                      palette: v,
+                      isArabic: isAr,
+                      label: s.chunkCountLabel,
+                      value: '$chunkCount',
+                    ),
+                    _InspectorRow(
+                      palette: v,
+                      isArabic: isAr,
+                      label: s.encryptionStatusLabel,
+                      value: widget.file.isEncrypted
+                          ? s.aesVerifiedLabel
+                          : s.keyUnsetBadge,
+                      valueColor:
+                          widget.file.isEncrypted ? v.signalGreen : v.secondary,
+                      leadingIcon: widget.file.isEncrypted
+                          ? Icons.verified_outlined
+                          : null,
+                    ),
+                    if (widget.file.createdAt > 0)
+                      _InspectorRow(
+                        palette: v,
+                        isArabic: isAr,
+                        label: s.uploadDateLabel,
+                        value: formatTimestamp(widget.file.createdAt),
+                      ),
+                  ],
+                ),
+              ),
+              if (sha.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                VaultSurface(
+                  palette: v,
+                  borderRadius: VaultRadii.md,
+                  padding: const EdgeInsets.all(14),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'SHA-256',
+                              style: VaultText.mono(v,
+                                  size: 10.5, color: v.secondary),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              truncatedSha,
+                              style: VaultText.mono(v, size: 12, color: v.ink),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      VaultMonoChip(
+                        palette: v,
+                        label: isAr ? 'نسخ' : 'Copy',
+                        icon: Icons.copy_rounded,
+                        textColor: v.champagne,
+                        borderColor: v.champagne.withValues(alpha: 0.4),
+                        onTap: () {
+                          Clipboard.setData(ClipboardData(text: sha));
+                          HapticFeedback.selectionClick();
+                          Navigator.pop(ctx);
+                          widget.controller.showToast(
+                            isAr ? 'تم نسخ بصمة SHA-256' : 'Copied SHA-256 hash',
+                          );
+                        },
                       ),
                     ],
                   ),
                 ),
               ],
-            ),
-            const SizedBox(height: 14),
-            VaultSurface(
-              palette: v,
-              borderRadius: VaultRadii.sm,
-              backgroundColor: v.surfaceAlt,
-              child: Column(
-                children: [
-                  _InspectorRow(
-                    palette: v,
-                    isArabic: isAr,
-                    label: isAr ? 'النوع' : 'MIME type',
-                    value: widget.file.mimeType,
-                    showDivider: false,
-                  ),
-                  if (_imageWidth != null && _imageHeight != null)
-                    _InspectorRow(
-                      palette: v,
-                      isArabic: isAr,
-                      label: isAr ? 'الأبعاد' : 'Dimensions',
-                      value: '$_imageWidth × $_imageHeight px',
-                    ),
-                  _InspectorRow(
-                    palette: v,
-                    isArabic: isAr,
-                    label: isAr ? 'الحجم' : 'Size',
-                    value: '${formatBytes(widget.file.size)} (${widget.file.size} B)',
-                  ),
-                  if (widget.file.createdAt > 0)
-                    _InspectorRow(
-                      palette: v,
-                      isArabic: isAr,
-                      label: isAr ? 'تاريخ الحفظ' : 'Stored',
-                      value: formatTimestamp(widget.file.createdAt),
-                    ),
-                  _InspectorRow(
-                    palette: v,
-                    isArabic: isAr,
-                    label: isAr ? 'التشفير' : 'Encryption',
-                    value: widget.file.isEncrypted
-                        ? 'Argon2id + AES-256-GCM'
-                        : (isAr ? 'غير مشفر' : 'Unencrypted'),
-                    valueColor: widget.file.isEncrypted ? v.signal : v.muted,
-                  ),
-                ],
-              ),
-            ),
-            if (widget.file.sha256.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: v.surfaceAlt,
-                  borderRadius: BorderRadius.circular(VaultRadii.xs),
-                  border: Border.all(color: v.rule),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'SHA-256',
-                          style: VaultText.mono(v, size: 11, color: v.muted),
-                        ),
-                        GestureDetector(
-                          onTap: () {
-                            Clipboard.setData(
-                              ClipboardData(text: widget.file.sha256),
-                            );
-                            HapticFeedback.selectionClick();
-                            widget.controller.showToast(
-                              isAr ? 'تم نسخ بصمة SHA-256' : 'Copied SHA-256 hash',
-                            );
-                            Navigator.pop(ctx);
-                          },
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.copy_all_outlined,
-                                  size: 14, color: v.cobalt),
-                              const SizedBox(width: 4),
-                              Text(
-                                isAr ? 'نسخ' : 'Copy',
-                                style: VaultText.body(
-                                  v,
-                                  isAr,
-                                  size: 12,
-                                  weight: FontWeight.w600,
-                                  color: v.cobalt,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    SelectableText(
-                      widget.file.sha256,
-                      style: VaultText.mono(v, size: 11.5, color: v.ink),
-                    ),
-                  ],
-                ),
-              ),
             ],
-          ],
+          ),
         ),
       ),
     );
@@ -532,123 +665,801 @@ class _PreviewScreenState extends State<PreviewScreen>
 
   @override
   Widget build(BuildContext context) {
-    final v = AppPalette.resolve(Brightness.dark);
+    // Always deep Obsidian Darkroom even when app is in Ivory Luxury light mode.
+    final v = AppPalette.darkroom();
     final isAr = widget.controller.isArabic;
+    final s = widget.controller.strings;
     final isPdf = isPdfFile(widget.file.mimeType, widget.file.name);
     final isImage = isImageFile(widget.file.mimeType, widget.file.name);
     final isVideo = isVideoFile(widget.file.mimeType, widget.file.name);
     final isAudio = isAudioFile(widget.file.mimeType, widget.file.name);
     final task = widget.controller.latestDownloadTaskFor(widget.file.id);
-    final motion = vaultMotion(context, 180);
-    final hasBottomDockMedia =
-        _localPath != null && (isImage || isVideo) && !_checking && !_isDemoSample;
+    final motion = vaultMotion(context, 250);
+    final isDecrypting = _checking || (_localPath == null && !_isDemoSample);
     final canHideChrome = _localPath != null && (isImage || isVideo);
 
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light,
-      child: Scaffold(
-        backgroundColor: v.ground,
-        body: LayoutBuilder(
-          builder: (context, constraints) {
-            final viewport = Size(constraints.maxWidth, constraints.maxHeight);
-            return Stack(
-              children: [
-                Positioned.fill(
-                  child: _buildBody(
-                    v,
-                    isAr,
-                    isPdf,
-                    isImage,
-                    isVideo,
-                    isAudio,
-                    task,
-                    viewport,
-                  ),
-                ),
+    return Directionality(
+      textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
+      child: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: SystemUiOverlayStyle.light,
+        child: Scaffold(
+          backgroundColor: v.canvas,
+          body: LayoutBuilder(
+            builder: (context, constraints) {
+              final viewport = Size(constraints.maxWidth, constraints.maxHeight);
+              final progressVal = _awaitingFreshTask
+                  ? 0.0
+                  : (task?.progress ?? 0.0).clamp(0.0, 1.0);
 
-                // Top archival darkroom header
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  child: IgnorePointer(
-                    ignoring: canHideChrome && !_showChrome,
-                    child: AnimatedSlide(
-                      duration: motion,
-                      curve: Curves.easeOutCubic,
-                      offset: (canHideChrome && !_showChrome)
-                          ? const Offset(0, -1.0)
-                          : Offset.zero,
-                      child: AnimatedOpacity(
-                        duration: motion,
-                        opacity: (canHideChrome && !_showChrome) ? 0.0 : 1.0,
-                        child: _PreviewHeaderBar(
+              return Stack(
+                children: [
+                  Positioned.fill(
+                    child: _buildBody(
+                      v,
+                      isAr,
+                      isPdf,
+                      isImage,
+                      isVideo,
+                      isAudio,
+                      task,
+                      viewport,
+                    ),
+                  ),
+
+                  // Thin champagne decrypting progress line at the very top
+                  if (isDecrypting &&
+                      !(!_awaitingFreshTask && task?.state == TaskState.failed))
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      child: SafeArea(
+                        bottom: false,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            VaultProgressBar(
+                              palette: v,
+                              progress: progressVal > 0 ? progressVal : 0.35,
+                              tone: VaultProgressTone.champagne,
+                              height: 3,
+                            ),
+                            const SizedBox(height: 68),
+                            VaultMonoChip(
+                              palette: v,
+                              label: s.decryptingMono,
+                              dotColor: v.champagne,
+                              textColor: v.champagne,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                  // Floating PDF page indicator pill ("3 / 24")
+                  if (isPdf && _totalPages > 0 && _showChrome)
+                    Positioned(
+                      bottom: 94,
+                      left: 0,
+                      right: 0,
+                      child: Center(
+                        child: VaultMonoChip(
                           palette: v,
-                          isArabic: isAr,
-                          file: widget.file,
-                          isPdf: isPdf,
-                          currentPage: _currentPage,
-                          totalPages: _totalPages,
-                          imageWidth: _imageWidth,
-                          imageHeight: _imageHeight,
-                          onBack: () => Navigator.pop(context),
-                          onInspect: () => _showInspectorSheet(v, isAr),
-                          onShare: (_localPath != null && !isImage && !isVideo)
-                              ? _shareFile
-                              : null,
+                          label: '$_currentPage / $_totalPages',
+                          textColor: v.ink,
+                          backgroundColor: v.scrim,
+                          borderColor: v.glassTopLeftBorder,
+                        ),
+                      ),
+                    ),
+
+                  // Top liquid-glass bar (Back · File Name · Menu)
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: IgnorePointer(
+                      ignoring: canHideChrome && !_showChrome,
+                      child: AnimatedSlide(
+                        duration: motion,
+                        curve: Curves.easeOut,
+                        offset: (canHideChrome && !_showChrome)
+                            ? const Offset(0, -1.0)
+                            : Offset.zero,
+                        child: AnimatedOpacity(
+                          duration: motion,
+                          opacity: (canHideChrome && !_showChrome) ? 0.0 : 1.0,
+                          child: SafeArea(
+                            bottom: false,
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                              child: VaultSurface(
+                                palette: v,
+                                borderRadius: VaultRadii.pill,
+                                elevated: true,
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 6),
+                                child: Row(
+                                  children: [
+                                    IconButton(
+                                      onPressed: () => Navigator.pop(context),
+                                      icon: Icon(Icons.arrow_back_rounded,
+                                          color: v.ink, size: 20),
+                                      tooltip: isAr ? 'رجوع' : 'Back',
+                                    ),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            widget.file.name,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: VaultText.body(
+                                              v,
+                                              isAr,
+                                              size: 14,
+                                              weight: FontWeight.w600,
+                                              applyArabicScale: false,
+                                            ),
+                                          ),
+                                          Row(
+                                            children: [
+                                              if (widget.file.isEncrypted) ...[
+                                                Icon(
+                                                  Icons.lock_outline_rounded,
+                                                  size: 10.5,
+                                                  color: v.signalGreen,
+                                                ),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  'AES-256',
+                                                  style: VaultText.mono(
+                                                    v,
+                                                    size: 10,
+                                                    color: v.signalGreen,
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 8),
+                                              ],
+                                              Text(
+                                                formatBytes(widget.file.size),
+                                                style: VaultText.mono(v,
+                                                    size: 10,
+                                                    color: v.secondary),
+                                              ),
+                                              if (isImage &&
+                                                  _localPath != null) ...[
+                                                const SizedBox(width: 8),
+                                                GestureDetector(
+                                                  onTap: () =>
+                                                      _toggleZoomPill(viewport),
+                                                  child: Text(
+                                                    '${(_currentScale * 100).round()}%',
+                                                    style: VaultText.mono(
+                                                      v,
+                                                      size: 10,
+                                                      color: v.champagne,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    IconButton(
+                                      onPressed: () =>
+                                          _showDarkroomMenu(v, isAr, viewport),
+                                      icon: Icon(Icons.more_horiz_rounded,
+                                          color: v.ink, size: 21),
+                                      tooltip: isAr ? 'خيارات' : 'Menu',
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
 
-                // Bottom Signal Vault Image or Video Control Dock
-                if (hasBottomDockMedia)
+                  // Bottom liquid-glass bar (Info · Download · Share · Delete) + swipe-up trigger
                   Positioned(
                     left: 0,
                     right: 0,
                     bottom: 0,
                     child: IgnorePointer(
-                      ignoring: !_showChrome,
+                      ignoring: canHideChrome && !_showChrome,
                       child: AnimatedSlide(
                         duration: motion,
-                        curve: Curves.easeOutCubic,
-                        offset: _showChrome
-                            ? Offset.zero
-                            : const Offset(0, 1.0),
+                        curve: Curves.easeOut,
+                        offset: (canHideChrome && !_showChrome)
+                            ? const Offset(0, 1.0)
+                            : Offset.zero,
                         child: AnimatedOpacity(
                           duration: motion,
-                          opacity: _showChrome ? 1.0 : 0.0,
-                          child: isImage
-                              ? _ImageControlDock(
-                                  palette: v,
-                                  isArabic: isAr,
-                                  scale: _currentScale,
-                                  backdrop: _backdrop,
-                                  quarterTurns: _quarterTurns,
-                                  onToggleZoom: () => _toggleZoomPill(viewport),
-                                  onRotate: _rotateImage,
-                                  onCycleBackdrop: _cycleBackdrop,
-                                  onShare: _shareFile,
-                                )
-                              : _VideoControlDock(
-                                  palette: v,
-                                  isArabic: isAr,
-                                  controller: _videoController,
-                                  muted: _videoMuted,
-                                  speed: _mediaSpeed,
-                                  onTogglePlay: _toggleVideoPlay,
-                                  onToggleMute: _toggleVideoMute,
-                                  onCycleSpeed: _cycleVideoSpeed,
-                                  onShare: _shareFile,
+                          opacity: (canHideChrome && !_showChrome) ? 0.0 : 1.0,
+                          child: SafeArea(
+                            top: false,
+                            child: Padding(
+                              padding:
+                                  const EdgeInsets.fromLTRB(24, 0, 24, 16),
+                              child: GestureDetector(
+                                onVerticalDragEnd: (details) {
+                                  if ((details.primaryVelocity ?? 0) < -180) {
+                                    _showInfoSheet(v, isAr);
+                                  }
+                                },
+                                child: Center(
+                                  child: ConstrainedBox(
+                                    constraints:
+                                        const BoxConstraints(maxWidth: 340),
+                                    child: VaultSurface(
+                                      palette: v,
+                                      borderRadius: VaultRadii.pill,
+                                      elevated: true,
+                                      borderColor: v.glassTopLeftBorder,
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 10, vertical: 8),
+                                      child: Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceEvenly,
+                                        children: [
+                                          VaultQuickActionCircle(
+                                            palette: v,
+                                            tone: VaultQuickTone.champagne,
+                                            icon: Icons.info_outline_rounded,
+                                            tooltip: s.infoLabel,
+                                            onTap: () =>
+                                                _showInfoSheet(v, isAr),
+                                          ),
+                                          VaultQuickActionCircle(
+                                            palette: v,
+                                            tone: VaultQuickTone.slate,
+                                            icon: Icons.download_outlined,
+                                            tooltip: s.downloadAction,
+                                            onTap: () => widget.controller
+                                                .downloadFile(widget.file),
+                                          ),
+                                          VaultQuickActionCircle(
+                                            palette: v,
+                                            tone: VaultQuickTone.mint,
+                                            icon: Icons.ios_share_rounded,
+                                            tooltip: s.shareLabel,
+                                            onTap: _shareFile,
+                                          ),
+                                          VaultQuickActionCircle(
+                                            palette: v,
+                                            tone: VaultQuickTone.coral,
+                                            icon: Icons.delete_outline_rounded,
+                                            tooltip: s.deleteAction,
+                                            onTap: () =>
+                                                _showDeleteConfirm(v, isAr),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
                                 ),
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                     ),
                   ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBody(
+    AppPalette v,
+    bool isAr,
+    bool isPdf,
+    bool isImage,
+    bool isVideo,
+    bool isAudio,
+    TaskRecord? task,
+    Size viewport,
+  ) {
+    if (_checking) {
+      return const SizedBox.expand();
+    }
+
+    if (_localPath != null) {
+      if (isImage) {
+        return _buildImageStage(v, isAr, viewport);
+      }
+      if (isVideo) {
+        return _buildVideoStage(v, isAr);
+      }
+      if (isAudio) {
+        return _buildAudioStage(v, isAr);
+      }
+      if (isPdf && _pdfController != null) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 78, 16, 90),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(VaultRadii.tile),
+              child: Container(
+                color: Colors.white,
+                child: PdfViewPinch(
+                  controller: _pdfController!,
+                  onDocumentLoaded: (doc) {
+                    if (mounted) {
+                      setState(() => _totalPages = doc.pagesCount);
+                    }
+                  },
+                  onPageChanged: (page) {
+                    if (mounted) {
+                      setState(() => _currentPage = page);
+                    }
+                  },
+                ),
+              ),
+            ),
+          ),
+        );
+      }
+    }
+
+    if (_isDemoSample) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: VaultSurface(
+            palette: v,
+            borderRadius: VaultRadii.card,
+            elevated: true,
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  iconForMimeOrName(widget.file.mimeType, widget.file.name),
+                  size: 32,
+                  color: v.champagne,
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  widget.file.name,
+                  textAlign: TextAlign.center,
+                  style: VaultText.heading(v, isAr, size: 17),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  isAr
+                      ? 'ملف تجريبي للعرض. ارفع ملفاً حقيقياً لمعاينته مباشرة بعد فك التشفير.'
+                      : 'Demo vault placeholder. Upload a real file to preview it directly after local decryption.',
+                  textAlign: TextAlign.center,
+                  style: VaultText.body(v, isAr, size: 13.5, color: v.secondary),
+                ),
               ],
-            );
-          },
+            ),
+          ),
+        ),
+      );
+    }
+
+    final failed = !_awaitingFreshTask && task?.state == TaskState.failed;
+    if (failed) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: VaultSurface(
+            palette: v,
+            borderRadius: VaultRadii.card,
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.error_outline_rounded, size: 30, color: v.coral),
+                const SizedBox(height: 12),
+                Text(
+                  isAr ? 'فشل فك التشفير والتنزيل' : 'Decryption failed',
+                  style: VaultText.heading(v, isAr, size: 17),
+                ),
+                if (task?.error != null) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    task!.error!,
+                    textAlign: TextAlign.center,
+                    style: VaultText.body(v, isAr, size: 13, color: v.coral),
+                  ),
+                ],
+                const SizedBox(height: 18),
+                VaultPillButton(
+                  palette: v,
+                  isArabic: isAr,
+                  expand: false,
+                  height: 44,
+                  label: widget.controller.strings.retryAction,
+                  onPressed: _preparePreview,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return const SizedBox.expand();
+  }
+
+  Widget _buildImageStage(AppPalette v, bool isAr, Size viewport) {
+    final stageColor = switch (_backdrop) {
+      _ImageBackdrop.dark => v.canvas,
+      _ImageBackdrop.grid => v.cardSolid,
+      _ImageBackdrop.paper => const Color(0xFFF7F6F3),
+    };
+
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: () => setState(() => _showChrome = !_showChrome),
+      onDoubleTapDown: (details) =>
+          _doubleTapLocalPosition = details.localPosition,
+      onDoubleTap: () => _handleDoubleTap(viewport),
+      child: AnimatedContainer(
+        duration: vaultMotion(context, 250),
+        color: stageColor,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (_backdrop == _ImageBackdrop.grid)
+              Positioned.fill(
+                child: CustomPaint(
+                  painter: _CheckerboardPainter(
+                    lightTile: const Color(0xFF222226),
+                    darkTile: v.cardSolid,
+                  ),
+                ),
+              ),
+            InteractiveViewer(
+              transformationController: _transformController,
+              minScale: 0.85,
+              maxScale: 6.0,
+              boundaryMargin: const EdgeInsets.all(24),
+              child: Center(
+                child: RotatedBox(
+                  quarterTurns: _quarterTurns,
+                  child: Image.file(
+                    File(_localPath!),
+                    fit: BoxFit.contain,
+                    gaplessPlayback: true,
+                    errorBuilder: (_, error, _) => Container(
+                      padding: const EdgeInsets.all(20),
+                      color: v.cardSolid,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.broken_image_outlined,
+                              size: 36, color: v.coral),
+                          const SizedBox(height: 10),
+                          Text(
+                            isAr ? 'تعذر عرض الصورة' : 'Could not render image',
+                            style: VaultText.heading(v, isAr, size: 15),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVideoStage(AppPalette v, bool isAr) {
+    final vc = _videoController;
+    final initialized = vc != null && vc.value.isInitialized && _videoReady;
+    final dur = initialized ? vc.value.duration : Duration.zero;
+    final pos = initialized ? vc.value.position : Duration.zero;
+    final totalMs = dur.inMilliseconds;
+    final posMs = totalMs > 0 ? pos.inMilliseconds.clamp(0, totalMs) : 0;
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => setState(() => _showChrome = !_showChrome),
+      onDoubleTap: _toggleVideoPlay,
+      child: Container(
+        color: v.canvas,
+        alignment: Alignment.center,
+        padding: const EdgeInsets.fromLTRB(12, 82, 12, 110),
+        child: _mediaError != null
+            ? VaultSurface(
+                palette: v,
+                borderRadius: VaultRadii.card,
+                padding: const EdgeInsets.all(20),
+                child: Text(
+                  _mediaError!,
+                  textAlign: TextAlign.center,
+                  style: VaultText.body(v, isAr, size: 13, color: v.coral),
+                ),
+              )
+            : !initialized
+                ? CircularProgressIndicator(color: v.champagne, strokeWidth: 2)
+                : Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(VaultRadii.md),
+                        child: AspectRatio(
+                          aspectRatio: vc.value.aspectRatio > 0
+                              ? vc.value.aspectRatio
+                              : 16 / 9,
+                          child: VideoPlayer(vc),
+                        ),
+                      ),
+                      // Minimal glass play button
+                      if (!vc.value.isPlaying || _showChrome)
+                        VaultTap(
+                          onTap: _toggleVideoPlay,
+                          child: VaultSurface(
+                            palette: v,
+                            borderRadius: VaultRadii.pill,
+                            padding: const EdgeInsets.all(18),
+                            child: Icon(
+                              vc.value.isPlaying
+                                  ? Icons.pause_rounded
+                                  : Icons.play_arrow_rounded,
+                              size: 34,
+                              color: v.champagne,
+                            ),
+                          ),
+                        ),
+                      if (_showChrome)
+                        Positioned(
+                          left: 8,
+                          right: 8,
+                          bottom: 8,
+                          child: VaultSurface(
+                            palette: v,
+                            borderRadius: VaultRadii.pill,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 6),
+                            child: Row(
+                              children: [
+                                Text(
+                                  _formatMediaDuration(pos),
+                                  style: VaultText.mono(v,
+                                      size: 11, color: v.ink),
+                                ),
+                                Expanded(
+                                  child: SliderTheme(
+                                    data: SliderTheme.of(context).copyWith(
+                                      trackHeight: 2.5,
+                                      thumbShape: const RoundSliderThumbShape(
+                                          enabledThumbRadius: 5.5),
+                                      activeTrackColor: v.champagne,
+                                      inactiveTrackColor: v.glassBorder,
+                                      thumbColor: v.champagne,
+                                    ),
+                                    child: Slider(
+                                      value: totalMs > 0 ? posMs / totalMs : 0.0,
+                                      onChanged: totalMs > 0
+                                          ? (ratio) {
+                                              vc.seekTo(Duration(
+                                                milliseconds:
+                                                    (ratio * totalMs).round(),
+                                              ));
+                                            }
+                                          : null,
+                                    ),
+                                  ),
+                                ),
+                                Text(
+                                  _formatMediaDuration(dur),
+                                  style: VaultText.mono(v,
+                                      size: 11, color: v.secondary),
+                                ),
+                                const SizedBox(width: 8),
+                                GestureDetector(
+                                  onTap: _toggleVideoMute,
+                                  child: Icon(
+                                    _videoMuted
+                                        ? Icons.volume_off_outlined
+                                        : Icons.volume_up_outlined,
+                                    size: 17,
+                                    color: v.secondary,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                GestureDetector(
+                                  onTap: _cycleVideoSpeed,
+                                  child: Text(
+                                    '${_mediaSpeed == _mediaSpeed.roundToDouble() ? _mediaSpeed.toInt() : _mediaSpeed}x',
+                                    style: VaultText.mono(v,
+                                        size: 11, color: v.champagne),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+      ),
+    );
+  }
+
+  Widget _buildAudioStage(AppPalette v, bool isAr) {
+    final totalMs = _audioDur.inMilliseconds;
+    final posMs =
+        totalMs > 0 ? _audioPos.inMilliseconds.clamp(0, totalMs) : 0;
+    final progressRatio = totalMs > 0 ? posMs / totalMs : 0.0;
+
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 380),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: VaultSurface(
+            palette: v,
+            borderRadius: VaultRadii.card,
+            elevated: true,
+            padding: const EdgeInsets.all(24),
+            child: _mediaError != null
+                ? Text(
+                    _mediaError!,
+                    textAlign: TextAlign.center,
+                    style: VaultText.body(v, isAr, size: 13, color: v.coral),
+                  )
+                : Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 72,
+                        height: 72,
+                        decoration: BoxDecoration(
+                          color: v.glassFill,
+                          borderRadius: BorderRadius.circular(VaultRadii.tile),
+                          border: Border.all(color: v.glassBorder),
+                        ),
+                        alignment: Alignment.center,
+                        child: Icon(
+                          Icons.audiotrack_rounded,
+                          size: 30,
+                          color: v.champagne,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        widget.file.name,
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: VaultText.heading(v, isAr, size: 17),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        widget.file.isEncrypted
+                            ? 'AES-256-GCM'
+                            : (isAr ? 'ملف صوتي' : 'Audio'),
+                        style: VaultText.mono(v,
+                            size: 11, color: v.signalGreen),
+                      ),
+                      const SizedBox(height: 22),
+
+                      // Calm waveform visualization
+                      SizedBox(
+                        height: 46,
+                        width: double.infinity,
+                        child: CustomPaint(
+                          painter: _CalmWaveformPainter(
+                            progress: progressRatio,
+                            activeColor: v.champagne,
+                            inactiveColor: v.glassBorder,
+                          ),
+                        ),
+                      ),
+                      SliderTheme(
+                        data: SliderTheme.of(context).copyWith(
+                          trackHeight: 2.5,
+                          thumbShape: const RoundSliderThumbShape(
+                              enabledThumbRadius: 5.5),
+                          activeTrackColor: v.champagne,
+                          inactiveTrackColor: v.glassBorder,
+                          thumbColor: v.champagne,
+                        ),
+                        child: Slider(
+                          value: progressRatio,
+                          onChanged: totalMs > 0
+                              ? (ratio) {
+                                  _audioPlayer?.seek(Duration(
+                                    milliseconds: (ratio * totalMs).round(),
+                                  ));
+                                }
+                              : null,
+                        ),
+                      ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            _formatMediaDuration(_audioPos),
+                            style: VaultText.mono(v, size: 11, color: v.secondary),
+                          ),
+                          Text(
+                            _formatMediaDuration(_audioDur),
+                            style: VaultText.mono(v, size: 11, color: v.secondary),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          VaultQuickActionCircle(
+                            palette: v,
+                            tone: VaultQuickTone.slate,
+                            icon: Icons.replay_10_rounded,
+                            onTap: () {
+                              final next =
+                                  _audioPos - const Duration(seconds: 10);
+                              _audioPlayer?.seek(
+                                  next < Duration.zero ? Duration.zero : next);
+                            },
+                          ),
+                          const SizedBox(width: 16),
+                          VaultTap(
+                            onTap: () {
+                              final ap = _audioPlayer;
+                              if (ap == null) return;
+                              HapticFeedback.selectionClick();
+                              if (_audioPlaying) {
+                                ap.pause();
+                              } else {
+                                ap.play();
+                              }
+                            },
+                            child: Container(
+                              width: 56,
+                              height: 56,
+                              decoration: BoxDecoration(
+                                color: v.primaryBtnFill,
+                                shape: BoxShape.circle,
+                              ),
+                              alignment: Alignment.center,
+                              child: Icon(
+                                _audioPlaying
+                                    ? Icons.pause_rounded
+                                    : Icons.play_arrow_rounded,
+                                size: 28,
+                                color: v.primaryBtnInk,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          VaultQuickActionCircle(
+                            palette: v,
+                            tone: VaultQuickTone.champagne,
+                            icon: Icons.forward_10_rounded,
+                            onTap: () {
+                              final next =
+                                  _audioPos + const Duration(seconds: 10);
+                              _audioPlayer?.seek(
+                                  next > _audioDur ? _audioDur : next);
+                            },
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+          ),
         ),
       ),
     );
@@ -684,936 +1495,44 @@ class _PreviewScreenState extends State<PreviewScreen>
     vc.setPlaybackSpeed(next);
     setState(() => _mediaSpeed = next);
   }
-
-  void _cycleAudioSpeed() {
-    final ap = _audioPlayer;
-    if (ap == null) return;
-    HapticFeedback.selectionClick();
-    const speeds = [1.0, 1.25, 1.5, 2.0];
-    final next = speeds[(speeds.indexOf(_mediaSpeed) + 1) % speeds.length];
-    ap.setSpeed(next);
-    setState(() => _mediaSpeed = next);
-  }
-
-  Widget _buildBody(
-    AppPalette v,
-    bool isAr,
-    bool isPdf,
-    bool isImage,
-    bool isVideo,
-    bool isAudio,
-    TaskRecord? task,
-    Size viewport,
-  ) {
-    if (_checking) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircularProgressIndicator(color: v.signal),
-            const SizedBox(height: 14),
-            Text(
-              isAr ? 'جاري التحقق من الملف...' : 'Preparing encrypted file...',
-              style: VaultText.body(v, isAr, size: 13.5, color: v.muted),
-            ),
-          ],
-        ),
-      );
-    }
-
-    if (_localPath != null) {
-      if (isImage) {
-        return _buildImageStage(v, isAr, viewport);
-      }
-
-      if (isVideo) {
-        return _buildVideoStage(v, isAr);
-      }
-
-      if (isAudio) {
-        return _buildAudioStage(v, isAr);
-      }
-
-      if (isPdf && _pdfController != null) {
-        return SafeArea(
-          bottom: false,
-          child: Padding(
-            padding: const EdgeInsets.only(top: 64),
-            child: PdfViewPinch(
-              controller: _pdfController!,
-              onDocumentLoaded: (doc) {
-                if (mounted) {
-                  setState(() => _totalPages = doc.pagesCount);
-                }
-              },
-              onPageChanged: (page) {
-                if (mounted) {
-                  setState(() => _currentPage = page);
-                }
-              },
-            ),
-          ),
-        );
-      }
-    }
-
-    if (_isDemoSample) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: VaultSurface(
-            palette: v,
-            borderRadius: VaultRadii.md,
-            elevated: true,
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  isPdf ? Icons.picture_as_pdf_outlined : Icons.image_outlined,
-                  size: 28,
-                  color: v.signal,
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  widget.file.name,
-                  textAlign: TextAlign.center,
-                  style: VaultText.heading(v, isAr, size: 15.5),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  isAr
-                      ? 'ملف تجريبي للعرض. ارفع أي ملف PDF أو صورة حقيقية من جهازك لمعاينتها مباشرة داخل التطبيق.'
-                      : 'Demo placeholder file. Upload any real PDF or photo from your device to preview it natively.',
-                  textAlign: TextAlign.center,
-                  style: VaultText.body(v, isAr, size: 13, color: v.muted),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
-    final progress = _awaitingFreshTask
-        ? 0.0
-        : (task?.progress ?? 0.0).clamp(0.0, 1.0);
-    final pct = (progress * 100).round();
-    final failed = !_awaitingFreshTask && task?.state == TaskState.failed;
-
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: VaultSurface(
-          palette: v,
-          borderRadius: VaultRadii.md,
-          elevated: true,
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                failed ? Icons.error_outline : Icons.lock_open_outlined,
-                size: 26,
-                color: failed ? v.danger : v.signal,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                failed
-                    ? (isAr ? 'فشل التنزيل' : 'Download failed')
-                    : (isAr
-                        ? 'جاري التنزيل وفك التشفير'
-                        : 'Downloading and decrypting'),
-                style: VaultText.heading(v, isAr, size: 15.5),
-              ),
-              if (!failed) ...[
-                const SizedBox(height: 4),
-                Text(
-                  '$pct%',
-                  style: VaultText.tabular(
-                    v,
-                    isAr,
-                    size: 13,
-                    color: v.signal,
-                  ),
-                ),
-                const SizedBox(height: 14),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(VaultRadii.pill),
-                  child: LinearProgressIndicator(
-                    value: progress > 0 ? progress : null,
-                    minHeight: 5,
-                    backgroundColor: v.surfaceAlt,
-                    valueColor: AlwaysStoppedAnimation<Color>(v.signal),
-                  ),
-                ),
-              ] else ...[
-                if (task?.error != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    task!.error!,
-                    textAlign: TextAlign.center,
-                    style: VaultText.body(v, isAr, size: 12.5, color: v.danger),
-                  ),
-                ],
-                const SizedBox(height: 16),
-                VaultTap(
-                  onTap: _preparePreview,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 18,
-                      vertical: 10,
-                    ),
-                    decoration: BoxDecoration(
-                      color: v.signal,
-                      borderRadius: BorderRadius.circular(VaultRadii.sm),
-                    ),
-                    child: Text(
-                      isAr ? 'إعادة المحاولة' : 'Retry',
-                      style: VaultText.body(
-                        v,
-                        isAr,
-                        size: 13.5,
-                        weight: FontWeight.w700,
-                        color: v.signalInk,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildImageStage(AppPalette v, bool isAr, Size viewport) {
-    final isZoomed = _currentScale > 1.03;
-    final framePadding = (_showChrome && !isZoomed)
-        ? EdgeInsets.fromLTRB(
-            14,
-            MediaQuery.paddingOf(context).top + 74,
-            14,
-            MediaQuery.paddingOf(context).bottom + 92,
-          )
-        : EdgeInsets.zero;
-
-    final stageColor = switch (_backdrop) {
-      _ImageBackdrop.dark => v.ground,
-      _ImageBackdrop.grid => v.surface,
-      _ImageBackdrop.paper => const Color(0xFFECEFF4),
-    };
-
-    return GestureDetector(
-      behavior: HitTestBehavior.translucent,
-      onTap: () => setState(() => _showChrome = !_showChrome),
-      onDoubleTapDown: (details) =>
-          _doubleTapLocalPosition = details.localPosition,
-      onDoubleTap: () => _handleDoubleTap(viewport),
-      child: AnimatedContainer(
-        duration: vaultMotion(context, 180),
-        color: stageColor,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            if (_backdrop == _ImageBackdrop.grid)
-              Positioned.fill(
-                child: CustomPaint(
-                  painter: _CheckerboardPainter(
-                    lightTile: v.surfaceAlt,
-                    darkTile: v.surface,
-                  ),
-                ),
-              ),
-            InteractiveViewer(
-              transformationController: _transformController,
-              minScale: 0.85,
-              maxScale: 6.0,
-              boundaryMargin: const EdgeInsets.all(24),
-              child: AnimatedPadding(
-                duration: vaultMotion(context, 180),
-                curve: Curves.easeOutCubic,
-                padding: framePadding,
-                child: Center(
-                  child: RotatedBox(
-                    quarterTurns: _quarterTurns,
-                    child: Container(
-                      decoration: _backdrop == _ImageBackdrop.paper
-                          ? BoxDecoration(
-                              border: Border.all(
-                                color: const Color(0xFFD3D9E3),
-                                width: 1,
-                              ),
-                            )
-                          : BoxDecoration(
-                              border: Border.all(
-                                color: v.rule.withValues(alpha: 0.55),
-                                width: 1,
-                              ),
-                            ),
-                      child: Image.file(
-                        File(_localPath!),
-                        fit: BoxFit.contain,
-                        gaplessPlayback: true,
-                        errorBuilder: (_, error, _) => Container(
-                          padding: const EdgeInsets.all(20),
-                          color: v.surface,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.broken_image_outlined,
-                                  size: 36, color: v.danger),
-                              const SizedBox(height: 10),
-                              Text(
-                                isAr
-                                    ? 'تعذر عرض الصورة'
-                                    : 'Could not render image',
-                                style: VaultText.heading(v, isAr, size: 14),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                '$error',
-                                style: VaultText.body(v, isAr,
-                                    size: 12, color: v.muted),
-                                textAlign: TextAlign.center,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildVideoStage(AppPalette v, bool isAr) {
-    final vc = _videoController;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () => setState(() => _showChrome = !_showChrome),
-      onDoubleTap: _toggleVideoPlay,
-      child: Container(
-        color: v.ground,
-        alignment: Alignment.center,
-        padding: EdgeInsets.fromLTRB(
-          12,
-          _showChrome ? MediaQuery.paddingOf(context).top + 74 : 12,
-          12,
-          _showChrome ? MediaQuery.paddingOf(context).bottom + 116 : 12,
-        ),
-        child: _mediaError != null
-            ? VaultSurface(
-                palette: v,
-                borderRadius: VaultRadii.md,
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.videocam_off_outlined,
-                        size: 36, color: v.danger),
-                    const SizedBox(height: 10),
-                    Text(
-                      isAr ? 'تعذر تشغيل الفيديو' : 'Could not play video',
-                      style: VaultText.heading(v, isAr, size: 15),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _mediaError!,
-                      textAlign: TextAlign.center,
-                      style: VaultText.body(v, isAr, size: 12, color: v.muted),
-                    ),
-                  ],
-                ),
-              )
-            : (vc == null || !_videoReady)
-                ? CircularProgressIndicator(color: v.signal)
-                : Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      Container(
-                        decoration: BoxDecoration(
-                          border: Border.all(color: v.rule, width: 1),
-                        ),
-                        child: AspectRatio(
-                          aspectRatio: vc.value.aspectRatio > 0
-                              ? vc.value.aspectRatio
-                              : 16 / 9,
-                          child: VideoPlayer(vc),
-                        ),
-                      ),
-                      if (!vc.value.isPlaying)
-                        GestureDetector(
-                          onTap: _toggleVideoPlay,
-                          child: Container(
-                            width: 62,
-                            height: 62,
-                            decoration: BoxDecoration(
-                              color: v.signal,
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                  color: v.surface, width: 2),
-                            ),
-                            child: Icon(
-                              Icons.play_arrow,
-                              size: 34,
-                              color: v.signalInk,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-      ),
-    );
-  }
-
-  Widget _buildAudioStage(AppPalette v, bool isAr) {
-    final totalMs = _audioDur.inMilliseconds;
-    final posMs =
-        totalMs > 0 ? _audioPos.inMilliseconds.clamp(0, totalMs) : 0;
-
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 420),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: VaultSurface(
-            palette: v,
-            borderRadius: VaultRadii.md,
-            elevated: true,
-            padding: const EdgeInsets.all(24),
-            child: _mediaError != null
-                ? Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.music_off_outlined,
-                          size: 38, color: v.danger),
-                      const SizedBox(height: 12),
-                      Text(
-                        isAr ? 'تعذر تشغيل الملف الصوتي' : 'Could not play audio',
-                        style: VaultText.heading(v, isAr, size: 15.5),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        _mediaError!,
-                        textAlign: TextAlign.center,
-                        style: VaultText.body(v, isAr, size: 12, color: v.muted),
-                      ),
-                    ],
-                  )
-                : Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 72,
-                        height: 72,
-                        decoration: BoxDecoration(
-                          color: _audioPlaying ? v.signalSoft : v.cobaltSoft,
-                          borderRadius: BorderRadius.circular(VaultRadii.md),
-                          border: Border.all(
-                            color: (_audioPlaying ? v.signal : v.cobalt)
-                                .withValues(alpha: 0.5),
-                          ),
-                        ),
-                        child: Icon(
-                          _audioPlaying
-                              ? Icons.graphic_eq
-                              : Icons.audiotrack_outlined,
-                          size: 34,
-                          color: _audioPlaying ? v.signal : v.cobalt,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        widget.file.name,
-                        textAlign: TextAlign.center,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: VaultText.heading(v, isAr, size: 16),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        widget.file.isEncrypted
-                            ? (isAr
-                                ? 'تشغيل مشفر محلياً'
-                                : 'Locally decrypted audio')
-                            : (isAr ? 'ملف صوتي' : 'Audio track'),
-                        style: VaultText.body(v, isAr, size: 12.5, color: v.muted),
-                      ),
-                      const SizedBox(height: 18),
-                      SliderTheme(
-                        data: SliderTheme.of(context).copyWith(
-                          trackHeight: 4,
-                          thumbShape: const RoundSliderThumbShape(
-                              enabledThumbRadius: 7),
-                          activeTrackColor: v.signal,
-                          inactiveTrackColor: v.surfaceAlt,
-                          thumbColor: v.signal,
-                        ),
-                        child: Slider(
-                          value: totalMs > 0 ? posMs / totalMs : 0.0,
-                          onChanged: totalMs > 0
-                              ? (ratio) {
-                                  _audioPlayer?.seek(
-                                    Duration(
-                                      milliseconds: (ratio * totalMs).round(),
-                                    ),
-                                  );
-                                }
-                              : null,
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 6),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              _formatMediaDuration(_audioPos),
-                              style: VaultText.tabular(v, isAr, size: 12),
-                            ),
-                            Text(
-                              _formatMediaDuration(_audioDur),
-                              style: VaultText.tabular(v, isAr, size: 12),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 18),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          _DockIconButton(
-                            palette: v,
-                            icon: Icons.replay_10,
-                            active: false,
-                            tooltip: '-10s',
-                            onTap: () {
-                              final next = _audioPos - const Duration(seconds: 10);
-                              _audioPlayer?.seek(
-                                next < Duration.zero ? Duration.zero : next,
-                              );
-                            },
-                          ),
-                          const SizedBox(width: 14),
-                          VaultTap(
-                            onTap: () {
-                              final ap = _audioPlayer;
-                              if (ap == null) return;
-                              HapticFeedback.selectionClick();
-                              if (_audioPlaying) {
-                                ap.pause();
-                              } else {
-                                ap.play();
-                              }
-                            },
-                            child: Container(
-                              width: 56,
-                              height: 56,
-                              decoration: BoxDecoration(
-                                color: v.signal,
-                                borderRadius:
-                                    BorderRadius.circular(VaultRadii.md),
-                              ),
-                              child: Icon(
-                                _audioPlaying ? Icons.pause : Icons.play_arrow,
-                                size: 30,
-                                color: v.signalInk,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 14),
-                          _DockIconButton(
-                            palette: v,
-                            icon: Icons.forward_10,
-                            active: false,
-                            tooltip: '+10s',
-                            onTap: () {
-                              final next = _audioPos + const Duration(seconds: 10);
-                              _audioPlayer?.seek(
-                                next > _audioDur ? _audioDur : next,
-                              );
-                            },
-                          ),
-                          const SizedBox(width: 14),
-                          VaultTap(
-                            onTap: _cycleAudioSpeed,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 8),
-                              decoration: BoxDecoration(
-                                color: v.surfaceAlt,
-                                borderRadius:
-                                    BorderRadius.circular(VaultRadii.sm),
-                                border: Border.all(color: v.rule),
-                              ),
-                              child: Text(
-                                '${_mediaSpeed == _mediaSpeed.roundToDouble() ? _mediaSpeed.toInt() : _mediaSpeed}x',
-                                style: VaultText.tabular(v, isAr,
-                                    size: 12,
-                                    weight: FontWeight.w700,
-                                    color: v.ink),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-          ),
-        ),
-      ),
-    );
-  }
 }
 
-String _formatMediaDuration(Duration d) {
-  final totalSecs = d.inSeconds.clamp(0, 359999);
-  final hours = totalSecs ~/ 3600;
-  final mins = (totalSecs % 3600) ~/ 60;
-  final secs = totalSecs % 60;
-  final mStr = mins.toString().padLeft(2, '0');
-  final sStr = secs.toString().padLeft(2, '0');
-  return hours > 0 ? '$hours:$mStr:$sStr' : '$mStr:$sStr';
-}
-
-class _PreviewHeaderBar extends StatelessWidget {
+class _DarkMenuTile extends StatelessWidget {
   final AppPalette palette;
   final bool isArabic;
-  final FileRecord file;
-  final bool isPdf;
-  final int currentPage;
-  final int totalPages;
-  final int? imageWidth;
-  final int? imageHeight;
-  final VoidCallback onBack;
-  final VoidCallback onInspect;
-  final VoidCallback? onShare;
-
-  const _PreviewHeaderBar({
-    required this.palette,
-    required this.isArabic,
-    required this.file,
-    required this.isPdf,
-    required this.currentPage,
-    required this.totalPages,
-    required this.imageWidth,
-    required this.imageHeight,
-    required this.onBack,
-    required this.onInspect,
-    this.onShare,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final v = palette;
-    return Container(
-      decoration: BoxDecoration(
-        color: v.surface.withValues(alpha: 0.94),
-        border: Border(bottom: BorderSide(color: v.rule, width: 1)),
-      ),
-      child: SafeArea(
-        bottom: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(6, 6, 8, 8),
-          child: Row(
-            children: [
-              IconButton(
-                onPressed: onBack,
-                icon: Icon(Icons.arrow_back, color: v.ink, size: 22),
-                tooltip: isArabic ? 'رجوع' : 'Back',
-              ),
-              const SizedBox(width: 2),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      file.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: VaultText.heading(v, isArabic, size: 14.5),
-                    ),
-                    const SizedBox(height: 3),
-                    Row(
-                      children: [
-                        if (file.isEncrypted) ...[
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: v.signalSoft,
-                              borderRadius:
-                                  BorderRadius.circular(VaultRadii.xs),
-                              border: Border.all(
-                                color: v.signal.withValues(alpha: 0.45),
-                                width: 1,
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.lock, size: 10.5, color: v.signal),
-                                const SizedBox(width: 4),
-                                Text(
-                                  isArabic ? 'مشفّر' : 'AES-256',
-                                  style: VaultText.body(
-                                    v,
-                                    isArabic,
-                                    size: 10.5,
-                                    weight: FontWeight.w600,
-                                    color: v.signal,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                        ],
-                        if (imageWidth != null && imageHeight != null) ...[
-                          Text(
-                            '$imageWidth×$imageHeight',
-                            style: VaultText.tabular(v, isArabic, size: 11.5),
-                          ),
-                          const SizedBox(width: 8),
-                        ] else if (isPdf && totalPages > 0) ...[
-                          Text(
-                            '$currentPage / $totalPages',
-                            style: VaultText.tabular(v, isArabic, size: 11.5),
-                          ),
-                          const SizedBox(width: 8),
-                        ],
-                        Flexible(
-                          child: Text(
-                            formatBytes(file.size),
-                            overflow: TextOverflow.ellipsis,
-                            style: VaultText.tabular(v, isArabic, size: 11.5),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              IconButton(
-                onPressed: onInspect,
-                icon: Icon(Icons.info_outline, color: v.muted, size: 21),
-                tooltip: isArabic ? 'تفاصيل الملف' : 'File details',
-              ),
-              if (onShare != null)
-                IconButton(
-                  onPressed: onShare,
-                  icon: Icon(Icons.ios_share, color: v.cobalt, size: 20),
-                  tooltip: isArabic ? 'مشاركة' : 'Share',
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ImageControlDock extends StatelessWidget {
-  final AppPalette palette;
-  final bool isArabic;
-  final double scale;
-  final _ImageBackdrop backdrop;
-  final int quarterTurns;
-  final VoidCallback onToggleZoom;
-  final VoidCallback onRotate;
-  final VoidCallback onCycleBackdrop;
-  final VoidCallback onShare;
-
-  const _ImageControlDock({
-    required this.palette,
-    required this.isArabic,
-    required this.scale,
-    required this.backdrop,
-    required this.quarterTurns,
-    required this.onToggleZoom,
-    required this.onRotate,
-    required this.onCycleBackdrop,
-    required this.onShare,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final v = palette;
-    final zoomPct = (scale * 100).round();
-    final zoomed = (scale - 1.0).abs() > 0.03;
-
-    final backdropIcon = switch (backdrop) {
-      _ImageBackdrop.dark => Icons.dark_mode_outlined,
-      _ImageBackdrop.grid => Icons.grid_on_outlined,
-      _ImageBackdrop.paper => Icons.light_mode_outlined,
-    };
-    final backdropTooltip = switch (backdrop) {
-      _ImageBackdrop.dark => isArabic ? 'خلفية داكنة' : 'Dark canvas',
-      _ImageBackdrop.grid => isArabic ? 'شبكة الشفافية' : 'Transparency grid',
-      _ImageBackdrop.paper => isArabic ? 'ورق فاتح' : 'Light paper',
-    };
-
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-        child: VaultSurface(
-          palette: v,
-          borderRadius: VaultRadii.dock,
-          elevated: true,
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          child: Row(
-            children: [
-              // Zoom indicator / quick reset or 2x toggle
-              VaultTap(
-                onTap: onToggleZoom,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 7,
-                  ),
-                  decoration: BoxDecoration(
-                    color: zoomed ? v.signalSoft : v.surfaceAlt,
-                    borderRadius: BorderRadius.circular(VaultRadii.sm),
-                    border: Border.all(
-                      color: zoomed ? v.signal.withValues(alpha: 0.65) : v.rule,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        zoomed ? Icons.zoom_out_map : Icons.zoom_in_outlined,
-                        size: 16,
-                        color: zoomed ? v.signal : v.ink,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        '$zoomPct%',
-                        style: VaultText.tabular(
-                          v,
-                          isArabic,
-                          size: 12.5,
-                          weight: FontWeight.w700,
-                          color: zoomed ? v.signal : v.ink,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-
-              // Rotate 90 degrees
-              _DockIconButton(
-                palette: v,
-                icon: Icons.rotate_90_degrees_cw_outlined,
-                active: quarterTurns != 0,
-                tooltip: isArabic ? 'تدوير 90°' : 'Rotate 90°',
-                onTap: onRotate,
-              ),
-              const SizedBox(width: 6),
-
-              // Canvas backdrop cycle (darkroom / transparency grid / paper)
-              _DockIconButton(
-                palette: v,
-                icon: backdropIcon,
-                active: backdrop != _ImageBackdrop.dark,
-                tooltip: backdropTooltip,
-                onTap: onCycleBackdrop,
-              ),
-
-              const Spacer(),
-
-              // Primary share / export action
-              VaultTap(
-                onTap: onShare,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: v.cobaltSoft,
-                    borderRadius: BorderRadius.circular(VaultRadii.sm),
-                    border: Border.all(
-                      color: v.cobalt.withValues(alpha: 0.45),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.ios_share, size: 16, color: v.cobalt),
-                      const SizedBox(width: 6),
-                      Text(
-                        isArabic ? 'مشاركة' : 'Share',
-                        style: VaultText.body(
-                          v,
-                          isArabic,
-                          size: 13,
-                          weight: FontWeight.w600,
-                          color: v.cobalt,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _DockIconButton extends StatelessWidget {
-  final AppPalette palette;
   final IconData icon;
-  final bool active;
-  final String tooltip;
+  final String title;
   final VoidCallback onTap;
 
-  const _DockIconButton({
+  const _DarkMenuTile({
     required this.palette,
+    required this.isArabic,
     required this.icon,
-    required this.active,
-    required this.tooltip,
+    required this.title,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final v = palette;
-    return Tooltip(
-      message: tooltip,
-      child: VaultTap(
-        onTap: onTap,
-        child: Container(
-          width: 38,
-          height: 36,
-          decoration: BoxDecoration(
-            color: active ? v.cobaltSoft : v.surfaceAlt,
-            borderRadius: BorderRadius.circular(VaultRadii.sm),
-            border: Border.all(
-              color: active ? v.cobalt.withValues(alpha: 0.5) : v.rule,
+    return VaultTap(
+      onTap: onTap,
+      child: VaultSurface(
+        palette: v,
+        borderRadius: VaultRadii.md,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          children: [
+            Icon(icon, size: 19, color: v.champagne),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                title,
+                style: VaultText.body(v, isArabic,
+                    size: 14, weight: FontWeight.w500, applyArabicScale: false),
+              ),
             ),
-          ),
-          child: Icon(
-            icon,
-            size: 18,
-            color: active ? v.cobalt : v.ink,
-          ),
+          ],
         ),
       ),
     );
@@ -1626,6 +1545,7 @@ class _InspectorRow extends StatelessWidget {
   final String label;
   final String value;
   final Color? valueColor;
+  final IconData? leadingIcon;
   final bool showDivider;
 
   const _InspectorRow({
@@ -1634,6 +1554,7 @@ class _InspectorRow extends StatelessWidget {
     required this.label,
     required this.value,
     this.valueColor,
+    this.leadingIcon,
     this.showDivider = true,
   });
 
@@ -1641,10 +1562,10 @@ class _InspectorRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final v = palette;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: const EdgeInsets.symmetric(vertical: 11),
       decoration: BoxDecoration(
         border: showDivider
-            ? Border(top: BorderSide(color: v.rule, width: 1))
+            ? Border(top: BorderSide(color: v.glassBorder, width: 1))
             : null,
       ),
       child: Row(
@@ -1652,28 +1573,88 @@ class _InspectorRow extends StatelessWidget {
         children: [
           Text(
             label,
-            style: VaultText.body(v, isArabic, size: 12.5, color: v.muted),
+            style: VaultText.body(v, isArabic,
+                size: 13, color: v.secondary, applyArabicScale: false),
           ),
           const SizedBox(width: 12),
           Flexible(
-            child: Text(
-              value,
-              textAlign: TextAlign.end,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: VaultText.tabular(
-                v,
-                isArabic,
-                size: 12.5,
-                weight: FontWeight.w600,
-                color: valueColor ?? v.ink,
-              ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (leadingIcon != null) ...[
+                  Icon(leadingIcon,
+                      size: 15, color: valueColor ?? v.signalGreen),
+                  const SizedBox(width: 5),
+                ],
+                Flexible(
+                  child: Text(
+                    value,
+                    textAlign: TextAlign.end,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: VaultText.monoText(
+                      v,
+                      value,
+                      size: 12,
+                      weight: FontWeight.w600,
+                      color: valueColor ?? v.ink,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
       ),
     );
   }
+}
+
+class _CalmWaveformPainter extends CustomPainter {
+  final double progress;
+  final Color activeColor;
+  final Color inactiveColor;
+
+  const _CalmWaveformPainter({
+    required this.progress,
+    required this.activeColor,
+    required this.inactiveColor,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const barCount = 36;
+    final barW = size.width / (barCount * 1.8);
+    final gap = barW * 0.8;
+    final activePaint = Paint()
+      ..color = activeColor
+      ..strokeCap = StrokeCap.round;
+    final inactivePaint = Paint()
+      ..color = inactiveColor
+      ..strokeCap = StrokeCap.round;
+
+    for (var i = 0; i < barCount; i++) {
+      final norm = i / barCount;
+      final amp = 0.25 +
+          0.65 *
+              ((math.sin(i * 0.72).abs() * 0.65) +
+                  (math.cos(i * 1.35).abs() * 0.35));
+      final barH = (size.height * amp).clamp(6.0, size.height);
+      final x = i * (barW + gap);
+      final y = (size.height - barH) / 2;
+      final rect = RRect.fromRectAndRadius(
+        Rect.fromLTWH(x, y, barW, barH),
+        const Radius.circular(3),
+      );
+      canvas.drawRRect(
+          rect, norm <= progress ? activePaint : inactivePaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_CalmWaveformPainter oldDelegate) =>
+      oldDelegate.progress != progress ||
+      oldDelegate.activeColor != activeColor;
 }
 
 class _CheckerboardPainter extends CustomPainter {
@@ -1711,174 +1692,12 @@ class _CheckerboardPainter extends CustomPainter {
       oldDelegate.lightTile != lightTile || oldDelegate.darkTile != darkTile;
 }
 
-class _VideoControlDock extends StatelessWidget {
-  final AppPalette palette;
-  final bool isArabic;
-  final VideoPlayerController? controller;
-  final bool muted;
-  final double speed;
-  final VoidCallback onTogglePlay;
-  final VoidCallback onToggleMute;
-  final VoidCallback onCycleSpeed;
-  final VoidCallback onShare;
-
-  const _VideoControlDock({
-    required this.palette,
-    required this.isArabic,
-    required this.controller,
-    required this.muted,
-    required this.speed,
-    required this.onTogglePlay,
-    required this.onToggleMute,
-    required this.onCycleSpeed,
-    required this.onShare,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final v = palette;
-    final vc = controller;
-    final initialized = vc != null && vc.value.isInitialized;
-    final dur = initialized ? vc.value.duration : Duration.zero;
-    final pos = initialized ? vc.value.position : Duration.zero;
-    final playing = initialized && vc.value.isPlaying;
-    final totalMs = dur.inMilliseconds;
-    final posMs = totalMs > 0 ? pos.inMilliseconds.clamp(0, totalMs) : 0;
-
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-        child: VaultSurface(
-          palette: v,
-          borderRadius: VaultRadii.dock,
-          elevated: true,
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  Text(
-                    _formatMediaDuration(pos),
-                    style: VaultText.tabular(v, isArabic, size: 11.5),
-                  ),
-                  Expanded(
-                    child: SliderTheme(
-                      data: SliderTheme.of(context).copyWith(
-                        trackHeight: 3.5,
-                        thumbShape: const RoundSliderThumbShape(
-                            enabledThumbRadius: 6.5),
-                        activeTrackColor: v.signal,
-                        inactiveTrackColor: v.surfaceAlt,
-                        thumbColor: v.signal,
-                      ),
-                      child: Slider(
-                        value: totalMs > 0 ? posMs / totalMs : 0.0,
-                        onChanged: totalMs > 0
-                            ? (ratio) {
-                                vc?.seekTo(Duration(
-                                  milliseconds: (ratio * totalMs).round(),
-                                ));
-                              }
-                            : null,
-                      ),
-                    ),
-                  ),
-                  Text(
-                    _formatMediaDuration(dur),
-                    style: VaultText.tabular(v, isArabic, size: 11.5),
-                  ),
-                ],
-              ),
-              Row(
-                children: [
-                  VaultTap(
-                    onTap: onTogglePlay,
-                    child: Container(
-                      width: 38,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color: v.signal,
-                        borderRadius: BorderRadius.circular(VaultRadii.sm),
-                      ),
-                      child: Icon(
-                        playing ? Icons.pause : Icons.play_arrow,
-                        size: 20,
-                        color: v.signalInk,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  _DockIconButton(
-                    palette: v,
-                    icon: muted ? Icons.volume_off_outlined : Icons.volume_up_outlined,
-                    active: muted,
-                    tooltip: isArabic ? 'كتم الصوت' : 'Mute',
-                    onTap: onToggleMute,
-                  ),
-                  const SizedBox(width: 8),
-                  VaultTap(
-                    onTap: onCycleSpeed,
-                    child: Container(
-                      height: 36,
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: v.surfaceAlt,
-                        borderRadius: BorderRadius.circular(VaultRadii.sm),
-                        border: Border.all(color: v.rule),
-                      ),
-                      child: Text(
-                        '${speed == speed.roundToDouble() ? speed.toInt() : speed}x',
-                        style: VaultText.tabular(
-                          v,
-                          isArabic,
-                          size: 12,
-                          weight: FontWeight.w700,
-                          color: v.ink,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const Spacer(),
-                  VaultTap(
-                    onTap: onShare,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: v.cobaltSoft,
-                        borderRadius: BorderRadius.circular(VaultRadii.sm),
-                        border: Border.all(
-                          color: v.cobalt.withValues(alpha: 0.45),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.ios_share, size: 16, color: v.cobalt),
-                          const SizedBox(width: 6),
-                          Text(
-                            isArabic ? 'مشاركة' : 'Share',
-                            style: VaultText.body(
-                              v,
-                              isArabic,
-                              size: 13,
-                              weight: FontWeight.w600,
-                              color: v.cobalt,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+String _formatMediaDuration(Duration d) {
+  final totalSecs = d.inSeconds.clamp(0, 359999);
+  final hours = totalSecs ~/ 3600;
+  final mins = (totalSecs % 3600) ~/ 60;
+  final secs = totalSecs % 60;
+  final mStr = mins.toString().padLeft(2, '0');
+  final sStr = secs.toString().padLeft(2, '0');
+  return hours > 0 ? '$hours:$mStr:$sStr' : '$mStr:$sStr';
 }

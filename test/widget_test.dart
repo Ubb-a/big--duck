@@ -3,8 +3,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
-import 'package:big_duck/main.dart';
 import 'package:big_duck/l10n/app_strings.dart';
+import 'package:big_duck/main.dart';
 import 'package:big_duck/models/core_models.dart';
 import 'package:big_duck/screens/lock_screen.dart';
 import 'package:big_duck/screens/preview_screen.dart';
@@ -14,90 +14,80 @@ import 'package:big_duck/state/app_controller.dart';
 import 'package:big_duck/theme/app_theme.dart';
 
 void main() {
-  testWidgets('Signal Vault UI renders, filters, switches language, and scrolls',
+  testWidgets(
+      'Obsidian & Ivory Signal Vault boots Arabic RTL, searches globally, toggles grid, and switches to English LTR',
       (WidgetTester tester) async {
     await tester.pumpWidget(const BigDuckApp());
     await tester.pumpAndSettle();
 
-    expect(find.text('BIG DUCK'), findsOneWidget);
-    expect(find.text('Preview UI'), findsOneWidget);
+    // Primary layout starts in Arabic RTL on AuthScreen
+    expect(find.text('ربط تيليجرام'), findsOneWidget);
+    expect(find.text('معاينة الواجهة'), findsOneWidget);
 
-    await tester.tap(find.text('Preview UI'));
+    await tester.tap(find.text('معاينة الواجهة'));
     await tester.pumpAndSettle();
 
-    expect(find.text('BIG DUCK'), findsOneWidget);
-    expect(find.text('2 folders, 2 files'), findsOneWidget);
-    expect(find.byType(Image), findsNothing);
+    // Files screen in Arabic RTL
+    expect(find.text('الخزنة'), findsOneWidget);
     expect(find.text('Documents'), findsOneWidget);
     expect(find.text('Passport_Scan_Encrypted.pdf'), findsOneWidget);
+    expect(find.text('مملوكة لي'), findsOneWidget);
 
-    // Filter by PDF
-    await tester.tap(find.text('PDF').first);
-    await tester.pumpAndSettle();
-    expect(find.text('Passport_Scan_Encrypted.pdf'), findsOneWidget);
-    expect(find.text('Studio_Backup_2026.zip'), findsNothing);
-
-    await tester.tap(find.text('All'));
-    await tester.pumpAndSettle();
-
-    // Global search across folders finds nested demo file in Documents
+    // Global search across nested folders finds Tax_Return_2026.pdf inside Documents
     await tester.enterText(find.byType(TextField).first, 'Tax');
     await tester.pumpAndSettle();
     expect(find.text('Tax_Return_2026.pdf'), findsOneWidget);
-    expect(find.text('Vault search results (1)'), findsOneWidget);
     expect(find.text('Documents'), findsOneWidget);
 
     await tester.enterText(find.byType(TextField).first, '');
     await tester.pumpAndSettle();
 
-    // Toggle Grid view and verify archival extension chips
-    await tester.tap(find.byIcon(Icons.grid_view_outlined));
+    // Grid view toggle
+    await tester.tap(find.byIcon(Icons.grid_view_rounded));
     await tester.pumpAndSettle();
     expect(find.text('ZIP'), findsOneWidget);
-    await tester.tap(find.byIcon(Icons.view_list_outlined));
+    await tester.tap(find.byIcon(Icons.view_list_rounded));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Transfers'));
+    // Transfers tab via floating circular nav button
+    await tester.tap(find.byKey(const ValueKey('nav_transfers')));
     await tester.pumpAndSettle();
-    expect(find.text('No active transfers'), findsOneWidget);
+    expect(find.text('التحويلات'), findsOneWidget);
+    expect(find.text('لا توجد تحويلات'), findsOneWidget);
 
-    await tester.tap(find.text('Settings'));
+    // Settings tab via floating circular nav button
+    await tester.tap(find.byKey(const ValueKey('nav_settings')));
     await tester.pumpAndSettle();
-    expect(find.text('Account and security'), findsOneWidget);
-    expect(find.text('Biometric / Face ID lock'), findsOneWidget);
-    expect(find.text('AES-256-GCM encryption'), findsOneWidget);
+    expect(find.text('الإعدادات'), findsOneWidget);
+    expect(find.text('الحساب والأمان'), findsOneWidget);
 
-    // Scroll to Display and storage ledger
-    await tester.drag(find.byType(SettingsScreen), const Offset(0, -450));
+    // Scroll to Appearance & Language miniature theme previews and switch to English
+    await tester.drag(find.byType(SettingsScreen), const Offset(0, -800));
     await tester.pumpAndSettle();
-    expect(find.text('Display and storage'), findsOneWidget);
-    expect(find.text('Appearance and language'), findsOneWidget);
-    expect(find.text('Vault storage'), findsOneWidget);
-
-    // Switch to Arabic & verify RTL localized strings, then back to English
-    await tester.tap(find.text('العربية'));
-    await tester.pumpAndSettle();
-    expect(find.text('المظهر واللغة'), findsOneWidget);
-    expect(find.text('إحصائيات المساحة'), findsOneWidget);
+    expect(find.text('فاتح'), findsOneWidget);
+    expect(find.text('داكن'), findsOneWidget);
+    expect(find.text('تلقائي'), findsOneWidget);
 
     await tester.tap(find.text('English'));
     await tester.pumpAndSettle();
-    expect(find.text('Appearance and language'), findsOneWidget);
+    expect(find.text('APPEARANCE & LANGUAGE'), findsOneWidget);
 
-    // Scroll further down to verify Cache & Index backup ledgers
-    await tester.drag(find.byType(SettingsScreen), const Offset(0, -500));
+    // Verify mirrored LTR Files tab header
+    await tester.tap(find.byKey(const ValueKey('nav_files')));
     await tester.pumpAndSettle();
-    expect(find.text('Local download cache'), findsOneWidget);
-    expect(find.text('Index backup and restore'), findsOneWidget);
+    expect(find.text('Vault'), findsOneWidget);
+
     await tester.pump(const Duration(seconds: 4));
   });
 
-  testWidgets('Image preview darkroom renders controls, zooms, rotates, and inspects',
+  testWidgets(
+      'Preview darkroom stays pure obsidian black in light mode, zooms, rotates, and opens Info sheet',
       (WidgetTester tester) async {
-    final controller = AppController();
+    final controller = AppController(isArabic: false);
     addTearDown(controller.dispose);
 
-    final palette = AppPalette.resolve(Brightness.light);
+    // Intentionally pass light palette to verify Darkroom stays #050506 black
+    final lightPalette = AppPalette.resolve(Brightness.light);
     final imagePath = File('assets/icon.png').absolute.path;
     const file = FileRecord(
       id: 77,
@@ -105,7 +95,8 @@ void main() {
       name: 'w3.jpg',
       size: 397521,
       mimeType: 'image/jpeg',
-      sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+      sha256:
+          'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
       isEncrypted: true,
       createdAt: 1731700000,
     );
@@ -113,7 +104,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: PreviewScreen(
-          palette: palette,
+          palette: lightPalette,
           controller: controller,
           file: file,
           initialLocalPath: imagePath,
@@ -122,12 +113,13 @@ void main() {
     );
     await tester.pump();
 
+    final scaffold = tester.widget<Scaffold>(find.byType(Scaffold));
+    expect(scaffold.backgroundColor, const Color(0xFF050506));
     expect(find.text('w3.jpg'), findsOneWidget);
     expect(find.text('AES-256'), findsOneWidget);
     expect(find.text('100%'), findsOneWidget);
-    expect(find.text('Share'), findsOneWidget);
 
-    // Toggle zoom pill from 100% -> 200%, then back to 100%
+    // Zoom pill 100% -> 200% -> 100%
     await tester.tap(find.text('100%'));
     await tester.pumpAndSettle();
     expect(find.text('200%'), findsOneWidget);
@@ -136,36 +128,30 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('100%'), findsOneWidget);
 
-    // Rotate 90 degrees
-    await tester.tap(find.byTooltip('Rotate 90°'));
-    await tester.pump();
+    // Rotate 90° via Menu sheet
+    await tester.tap(find.byTooltip('Menu'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Rotate 90°'));
+    await tester.pumpAndSettle();
     final rotatedBox = tester.widget<RotatedBox>(find.byType(RotatedBox));
     expect(rotatedBox.quarterTurns, 1);
 
-    // Cycle darkroom backdrop (dark -> transparency grid -> light paper)
-    await tester.tap(find.byTooltip('Dark canvas'));
-    await tester.pump();
-    expect(find.byTooltip('Transparency grid'), findsOneWidget);
-
-    await tester.tap(find.byTooltip('Transparency grid'));
-    await tester.pump();
-    expect(find.byTooltip('Light paper'), findsOneWidget);
-
-    // Open archival file inspector sheet
-    await tester.tap(find.byTooltip('File details'));
+    // Info sheet
+    await tester.tap(find.byTooltip('Info'));
     await tester.pumpAndSettle();
-    expect(find.text('Archival file manifest'), findsOneWidget);
-    expect(find.text('Argon2id + AES-256-GCM'), findsOneWidget);
+    expect(find.text('AES-256-GCM'), findsOneWidget);
     expect(find.text('SHA-256'), findsOneWidget);
   });
 
-  testWidgets('Transfers screen shows Pause/Resume and LockScreen renders',
+  testWidgets(
+      'Transfers segments (Active/Completed/Failed), FLOOD_WAIT chip, Pause/Resume/Retry, and LockScreen failed state',
       (WidgetTester tester) async {
-    final controller = AppController();
+    final controller = AppController(isArabic: false);
     addTearDown(controller.dispose);
-    final palette = AppPalette.resolve(Brightness.light);
+    final palette = AppPalette.resolve(Brightness.dark);
     int? pausedId;
     int? resumedId;
+    int? retriedId;
 
     await tester.pumpWidget(
       MaterialApp(
@@ -188,42 +174,86 @@ void main() {
                 state: TaskState.paused,
                 progress: 0.5,
               ),
+              TaskRecord(
+                id: 13,
+                kind: TaskKind.upload,
+                fileId: 103,
+                state: TaskState.completed,
+                progress: 1.0,
+              ),
+              TaskRecord(
+                id: 14,
+                kind: TaskKind.download,
+                fileId: 104,
+                state: TaskState.failed,
+                progress: 0.25,
+                error: 'Timeout waiting for MTProto DC',
+              ),
             ],
-            fileNamesById: const {101: 'clip.mp4', 102: 'track.mp3'},
-            fileSizesById: const {101: 1000000, 102: 500000},
-            floodWaitSeconds: 0,
+            fileNamesById: const {
+              101: 'clip.mp4',
+              102: 'track.mp3',
+              103: 'archive.zip',
+              104: 'raw_photo.dng',
+            },
+            fileSizesById: const {
+              101: 1200 * 1024 * 1024,
+              102: 500 * 1024 * 1024,
+              103: 100 * 1024 * 1024,
+              104: 800 * 1024 * 1024,
+            },
+            floodWaitSeconds: 24,
             bottomPadding: 24,
             onPauseTask: (id) => pausedId = id,
             onResumeTask: (task) => resumedId = task.id,
+            onRetryTask: (task) => retriedId = task.id,
           ),
         ),
       ),
     );
     await tester.pumpAndSettle();
 
+    expect(find.text('Telegram asked us to wait 24s'), findsOneWidget);
     expect(find.text('clip.mp4'), findsOneWidget);
     expect(find.text('track.mp3'), findsOneWidget);
 
-    await tester.tap(find.text('Pause'));
+    await tester.tap(find.byTooltip('Pause'));
     expect(pausedId, 11);
 
-    await tester.tap(find.text('Resume'));
+    await tester.tap(find.byTooltip('Resume'));
     expect(resumedId, 12);
 
+    await tester.tap(find.text('Completed (1)'));
+    await tester.pumpAndSettle();
+    expect(find.text('archive.zip'), findsOneWidget);
+
+    await tester.tap(find.text('Failed (1)'));
+    await tester.pumpAndSettle();
+    expect(find.text('raw_photo.dng'), findsOneWidget);
+    await tester.tap(find.text('Retry'));
+    expect(retriedId, 14);
+
+    // LockScreen failed state
     await tester.pumpWidget(
       MaterialApp(
-        home: LockScreen(palette: palette, controller: controller),
+        home: LockScreen(
+          palette: palette,
+          controller: controller,
+          initialFailed: true,
+        ),
       ),
     );
     await tester.pump();
-    expect(find.text('Vault locked'), findsOneWidget);
-    expect(find.text('Unlock vault'), findsOneWidget);
+    expect(find.text('BIG DUCK'), findsOneWidget);
+    expect(find.text('Unlock your vault'), findsOneWidget);
+    expect(find.text('Try again'), findsOneWidget);
+    expect(find.text('Use passcode'), findsOneWidget);
   });
 
   testWidgets(
-      'Saved Telegram session mounts vault directly without AuthScreen and Sign out resets',
+      'Saved session mounts Vault directly, shows Share Save-to-Vault modal, and Log out dialog confirms reset',
       (WidgetTester tester) async {
-    final controller = AppController();
+    final controller = AppController(isArabic: false);
     addTearDown(controller.dispose);
 
     controller.debugPrimeSavedSession(
@@ -234,60 +264,73 @@ void main() {
     await tester.pumpWidget(BigDuckApp(controller: controller));
     await tester.pumpAndSettle();
 
-    expect(find.text('Mount your Telegram vault'), findsNothing);
+    expect(find.text('Connect Telegram'), findsNothing);
     expect(find.text('Documents'), findsOneWidget);
-    expect(find.text('Connecting...'), findsOneWidget);
 
-    await tester.tap(find.text('Settings'));
+    // Simulate receiving file from OS Share sheet
+    controller.debugStageShareSheet(['/tmp/contract.pdf']);
+    await tester.pumpAndSettle();
+    expect(find.text('Save to Vault'), findsOneWidget);
+    expect(find.text('contract.pdf'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(find.text('Save to Vault'), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('nav_settings')));
     await tester.pumpAndSettle();
     expect(find.text('Duck Keeper'), findsOneWidget);
-    expect(find.text('Sign out'), findsOneWidget);
 
-    await tester.tap(find.text('Sign out'));
+    await tester.drag(find.byType(SettingsScreen), const Offset(0, -1000));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Log out'));
+    await tester.pumpAndSettle();
+
+    // Confirmation dialog appears before disconnecting session
+    expect(find.text('Log out of Telegram?'), findsOneWidget);
+    await tester.tap(find.text('Log out').last);
     await tester.pumpAndSettle();
     await tester.pump(const Duration(seconds: 4));
 
-    expect(find.text('Mount your Telegram vault'), findsOneWidget);
+    expect(find.text('Connect Telegram'), findsOneWidget);
   });
 
   testWidgets(
-      'Storage destination sheet filters owned vs admin groups, searches, and creates private vault',
+      'Storage destination sheet filters Owned vs Admin chats, searches, and creates private vault group',
       (WidgetTester tester) async {
-    await tester.pumpWidget(const BigDuckApp());
+    final controller = AppController(isArabic: false);
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(BigDuckApp(controller: controller));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Preview UI'));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Settings'));
+    // Tapping destination chip directly on FilesScreen opens the storage sheet
+    await tester.tap(find.text('Saved Messages'));
     await tester.pumpAndSettle();
 
-    await tester.drag(find.byType(SettingsScreen), const Offset(0, -550));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Storage destination'), findsOneWidget);
-    expect(find.text('Change'), findsOneWidget);
-
-    await tester.tap(find.text('Change'));
-    await tester.pumpAndSettle();
-
-    // Owned by me tab active by default: excludes Shared Studio Admin
+    // Owned by me default: lists creator chats, excludes Shared Studio Admin
     expect(find.text('BIG DUCK Archive'), findsOneWidget);
     expect(find.text('Personal Media Vault'), findsOneWidget);
     expect(find.text('Shared Studio Admin'), findsNothing);
 
-    await tester.tap(find.text('Admin access'));
+    await tester.tap(find.text('Admin (3)'));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('Shared Studio Admin'),
+      120,
+      scrollable: find.byType(Scrollable).last,
+    );
     await tester.pumpAndSettle();
     expect(find.text('Shared Studio Admin'), findsOneWidget);
 
-    await tester.tap(find.text('Owned by me'));
+    await tester.tap(find.text('Owned by me (2)'));
     await tester.pumpAndSettle();
     expect(find.text('Shared Studio Admin'), findsNothing);
 
     final searchField = find.byWidgetPredicate(
-      (w) =>
-          w is TextField &&
-          w.decoration?.hintText == 'Search owned groups or channels',
+      (w) => w is TextField && w.decoration?.hintText == 'Search owned chats...',
     );
     await tester.enterText(searchField, 'Personal');
     await tester.pumpAndSettle();
@@ -297,18 +340,18 @@ void main() {
     await tester.enterText(searchField, '');
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('New private vault'));
+    await tester.tap(find.text('Create private vault group'));
     await tester.pumpAndSettle();
 
     final createNameField = find.byWidgetPredicate(
       (w) =>
           w is TextField &&
-          w.decoration?.hintText == 'Vault name (e.g. BIG DUCK Vault)',
+          w.decoration?.hintText == 'Vault name (e.g. Private Vault)',
     );
     await tester.enterText(createNameField, 'Secret Duck Vault');
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Create and select'));
+    await tester.tap(find.text('Create & select'));
     await tester.pumpAndSettle();
 
     expect(find.text('Secret Duck Vault'), findsOneWidget);

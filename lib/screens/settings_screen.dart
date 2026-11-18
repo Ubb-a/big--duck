@@ -1,12 +1,10 @@
-import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
+import 'package:material_ui/material_ui.dart';
 
-import '../l10n/app_strings.dart';
-import '../models/core_models.dart';
 import '../state/app_controller.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
-import '../widgets/app_icon.dart';
+import '../widgets/storage_destination_sheet.dart';
 import '../widgets/vault_surface.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -27,24 +25,14 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   static const _chunks = [64, 256, 512, 1024];
+  static const _autoLockOptions = [0, 1, 5, 15];
 
-  final _encPassCtrl = TextEditingController();
-  final _backupPassCtrl = TextEditingController();
-  final _restoreMsgIdCtrl = TextEditingController();
   CacheStats _cacheStats = const CacheStats(fileCount: 0, totalBytes: 0);
 
   @override
   void initState() {
     super.initState();
     _loadCacheStats();
-  }
-
-  @override
-  void dispose() {
-    _encPassCtrl.dispose();
-    _backupPassCtrl.dispose();
-    _restoreMsgIdCtrl.dispose();
-    super.dispose();
   }
 
   Future<void> _loadCacheStats() async {
@@ -54,14 +42,286 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  void _showStorageDestinationSheet(BuildContext context) {
-    showModalBottomSheet<void>(
+  void _showVaultPasswordDialog() {
+    final p = widget.palette;
+    final ctrl = widget.controller;
+    final s = ctrl.strings;
+    final passCtrl = TextEditingController();
+
+    showDialog<void>(
       context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (_) => _StorageDestinationSheet(
-        palette: widget.palette,
-        controller: widget.controller,
+      builder: (ctx) => Directionality(
+        textDirection: s.ar ? TextDirection.rtl : TextDirection.ltr,
+        child: VaultDialogShell(
+          palette: p,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(s.encryptionTitle,
+                  style: VaultText.heading(p, s.ar, size: 19)),
+              const SizedBox(height: 6),
+              Text(
+                s.encryptionSub,
+                style: VaultText.body(p, s.ar, size: 13, color: p.secondary),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: passCtrl,
+                obscureText: true,
+                autofocus: true,
+                style: VaultText.body(p, s.ar,
+                    size: 14, applyArabicScale: false),
+                decoration: InputDecoration(
+                  hintText: s.encPassHint,
+                  hintStyle: VaultText.monoText(p, s.encPassHint,
+                      size: 11.5, color: p.secondary),
+                  filled: true,
+                  fillColor: p.glassFill,
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(VaultRadii.tile),
+                    borderSide: BorderSide(color: p.glassBorder),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(VaultRadii.tile),
+                    borderSide: BorderSide(color: p.glassBorder),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(VaultRadii.tile),
+                    borderSide: BorderSide(color: p.champagne),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: VaultPillButton(
+                      palette: p,
+                      isArabic: s.ar,
+                      variant: VaultPillVariant.secondary,
+                      height: 44,
+                      label: s.cancel,
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: VaultPillButton(
+                      palette: p,
+                      isArabic: s.ar,
+                      height: 44,
+                      label: s.applyPassword,
+                      onPressed: () {
+                        if (passCtrl.text.trim().isNotEmpty) {
+                          ctrl.setEncryptionPassword(passCtrl.text);
+                          Navigator.pop(ctx);
+                        }
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    ).whenComplete(passCtrl.dispose);
+  }
+
+  void _showBackupDialog({required bool isRestore}) {
+    final p = widget.palette;
+    final ctrl = widget.controller;
+    final s = ctrl.strings;
+    final passCtrl = TextEditingController();
+    final msgCtrl = TextEditingController();
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: s.ar ? TextDirection.rtl : TextDirection.ltr,
+        child: VaultDialogShell(
+          palette: p,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                isRestore ? s.restoreIndex : s.backupIndex,
+                style: VaultText.heading(p, s.ar, size: 19),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: passCtrl,
+                obscureText: true,
+                autofocus: true,
+                style: VaultText.body(p, s.ar,
+                    size: 14, applyArabicScale: false),
+                decoration: InputDecoration(
+                  hintText: s.backupPassHint,
+                  hintStyle: VaultText.monoText(p, s.backupPassHint,
+                      size: 11.5, color: p.secondary),
+                  filled: true,
+                  fillColor: p.glassFill,
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(VaultRadii.tile),
+                    borderSide: BorderSide(color: p.glassBorder),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(VaultRadii.tile),
+                    borderSide: BorderSide(color: p.glassBorder),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(VaultRadii.tile),
+                    borderSide: BorderSide(color: p.champagne),
+                  ),
+                ),
+              ),
+              if (isRestore) ...[
+                const SizedBox(height: 10),
+                TextField(
+                  controller: msgCtrl,
+                  keyboardType: TextInputType.number,
+                  style: VaultText.mono(p, size: 13, color: p.ink),
+                  decoration: InputDecoration(
+                    hintText: s.msgIdHint,
+                    hintStyle: VaultText.monoText(p, s.msgIdHint,
+                        size: 11.5, color: p.secondary),
+                    filled: true,
+                    fillColor: p.glassFill,
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 12),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(VaultRadii.tile),
+                      borderSide: BorderSide(color: p.glassBorder),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(VaultRadii.tile),
+                      borderSide: BorderSide(color: p.glassBorder),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(VaultRadii.tile),
+                      borderSide: BorderSide(color: p.champagne),
+                    ),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: VaultPillButton(
+                      palette: p,
+                      isArabic: s.ar,
+                      variant: VaultPillVariant.secondary,
+                      height: 44,
+                      label: s.cancel,
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: VaultPillButton(
+                      palette: p,
+                      isArabic: s.ar,
+                      height: 44,
+                      label: isRestore ? s.restoreIndex : s.backupIndex,
+                      onPressed: () {
+                        if (passCtrl.text.isEmpty) return;
+                        if (isRestore) {
+                          ctrl.restoreIndex(
+                              passCtrl.text, int.tryParse(msgCtrl.text.trim()));
+                        } else {
+                          ctrl.backupIndex(passCtrl.text);
+                        }
+                        Navigator.pop(ctx);
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    ).whenComplete(() {
+      passCtrl.dispose();
+      msgCtrl.dispose();
+    });
+  }
+
+  void _showLogoutConfirmDialog() {
+    final p = widget.palette;
+    final ctrl = widget.controller;
+    final s = ctrl.strings;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: s.ar ? TextDirection.rtl : TextDirection.ltr,
+        child: VaultDialogShell(
+          palette: p,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  VaultQuickActionCircle(
+                    palette: p,
+                    tone: VaultQuickTone.coral,
+                    icon: Icons.logout_rounded,
+                    onTap: null,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      s.logOutConfirmTitle,
+                      style: VaultText.heading(p, s.ar, size: 18),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(
+                s.logOutConfirmDesc,
+                style: VaultText.body(p, s.ar, size: 13.5, color: p.secondary),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: VaultPillButton(
+                      palette: p,
+                      isArabic: s.ar,
+                      variant: VaultPillVariant.secondary,
+                      height: 44,
+                      label: s.cancel,
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: VaultPillButton(
+                      palette: p,
+                      isArabic: s.ar,
+                      variant: VaultPillVariant.danger,
+                      height: 44,
+                      label: ctrl.demoMode ? s.exitPreview : s.logOut,
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        ctrl.logout();
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -71,1415 +331,858 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final p = widget.palette;
     final ctrl = widget.controller;
     final s = ctrl.strings;
-    final motion = vaultMotion(context, 180);
+
     final selectedChat = ctrl.storageChats
         .where((c) => c.id == ctrl.targetChatId)
         .firstOrNull;
     final effectiveKind =
         selectedChat?.kind ?? ctrl.cachedTargetChatKind ?? 'group';
-    final activeDestTitle = ctrl.targetChatId == null
-        ? s.savedMessagesDefault
-        : (selectedChat?.title ??
-            ctrl.cachedTargetChatTitle ??
-            'Chat #${ctrl.targetChatId}');
-    final sep = s.ar ? '، ' : ', ';
+    final activeDestTitle = ctrl.activeDestinationTitle(s);
     final activeDestSub = ctrl.targetChatId == null
         ? s.vaultSealLabel
-        : '${effectiveKind == 'channel' ? s.channelKindLabel : s.groupKindLabel}$sep${selectedChat != null ? (selectedChat.isCreator ? s.roleOwnerBadge : s.roleAdminBadge) : s.privateBadge}';
+        : '${effectiveKind == 'channel' ? s.channelKindLabel : s.groupKindLabel} · ${selectedChat != null ? (selectedChat.isCreator ? s.roleOwnerBadge : s.roleAdminBadge) : s.privateBadge}';
 
-    final files = ctrl.snapshot.allFiles.isNotEmpty
-        ? ctrl.snapshot.allFiles
-        : ctrl.snapshot.files;
-    var totalBytes = 0;
-    var imgBytes = 0;
-    var pdfBytes = 0;
-    var videoBytes = 0;
-    var otherBytes = 0;
-    for (final f in files) {
-      totalBytes += f.size;
-      if (isImageFile(f.mimeType, f.name)) {
-        imgBytes += f.size;
-      } else if (isPdfFile(f.mimeType, f.name)) {
-        pdfBytes += f.size;
-      } else if (isVideoFile(f.mimeType, f.name) ||
-          isAudioFile(f.mimeType, f.name)) {
-        videoBytes += f.size;
-      } else {
-        otherBytes += f.size;
-      }
-    }
-
-    final inputBorder = OutlineInputBorder(
-      borderRadius: BorderRadius.circular(VaultRadii.sm),
-      borderSide: BorderSide(color: p.rule),
-    );
-    final focusedInputBorder = OutlineInputBorder(
-      borderRadius: BorderRadius.circular(VaultRadii.sm),
-      borderSide: BorderSide(color: p.cobalt, width: 1.5),
-    );
+    final lastBackupLabel = ctrl.lastBackupAt != null
+        ? formatTimestamp(ctrl.lastBackupAt!)
+        : s.neverLabel;
 
     return ListView(
-      padding: EdgeInsets.fromLTRB(16, 16, 16, widget.bottomPadding),
-      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      padding: EdgeInsets.fromLTRB(
+        VaultSpacing.screenHorizontal,
+        16,
+        VaultSpacing.screenHorizontal,
+        widget.bottomPadding + 24,
+      ),
       children: [
         Text(
           s.settingsTitle,
-          style: VaultText.display(p, s.ar, size: 26),
+          style: VaultText.display(p, s.ar, size: 34),
         ),
         const SizedBox(height: 4),
         Text(
           s.settingsSub,
-          style: VaultText.body(p, s.ar, size: 13.5, color: p.muted),
-        ),
-        const SizedBox(height: 20),
-
-        // 1. Account & Security Ledger
-        VaultSectionHeader(
-          palette: p,
-          isArabic: s.ar,
-          title: s.accountSectionTitle,
-        ),
-        VaultSurface(
-          palette: p,
-          borderRadius: VaultRadii.md,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Connected Telegram account + Sign out
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            ctrl.displayAccountName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: VaultText.heading(p, s.ar, size: 15),
-                          ),
-                          if (ctrl.displayUsername != null &&
-                              ctrl.displayUsername!.isNotEmpty) ...[
-                            const SizedBox(height: 2),
-                            Text(
-                              '@${ctrl.displayUsername}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: VaultText.mono(p, size: 12, color: p.muted),
-                            ),
-                          ],
-                          const SizedBox(height: 6),
-                          VaultStatusDot(
-                            palette: p,
-                            isArabic: s.ar,
-                            dotColor: ctrl.authStatus.isAuthorized
-                                ? p.cobalt
-                                : (ctrl.isReconnecting
-                                    ? p.signal
-                                    : p.danger),
-                            label: ctrl.authStatus.isAuthorized
-                                ? s.statusSynced
-                                : (ctrl.isReconnecting
-                                    ? s.statusConnecting
-                                    : s.statusOfflineTap),
-                            onTap: (!ctrl.authStatus.isAuthorized &&
-                                    !ctrl.isReconnecting &&
-                                    ctrl.hasSavedSession)
-                                ? ctrl.connect
-                                : null,
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    OutlinedButton(
-                      onPressed: ctrl.logout,
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: p.danger,
-                        side: BorderSide(color: p.rule),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(VaultRadii.sm),
-                        ),
-                      ),
-                      child: Text(ctrl.demoMode ? s.exitPreview : s.signOut),
-                    ),
-                  ],
-                ),
-              ),
-              Divider(height: 1, thickness: 1, color: p.rule),
-
-              // Biometric / Face ID Lock
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.fingerprint,
-                      size: 22,
-                      color: ctrl.biometricEnabled ? p.signal : p.muted,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            s.biometricLockTitle,
-                            style: VaultText.heading(p, s.ar, size: 15),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            ctrl.biometricAvailable
-                                ? s.biometricLockSub
-                                : s.biometricUnavailable,
-                            style: VaultText.body(p, s.ar,
-                                size: 12, color: p.muted),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Switch.adaptive(
-                      value: ctrl.biometricEnabled,
-                      activeTrackColor: p.signal,
-                      onChanged: (value) async {
-                        HapticFeedback.selectionClick();
-                        await ctrl.setBiometricEnabled(value);
-                      },
-                    ),
-                  ],
-                ),
-              ),
-              Divider(height: 1, thickness: 1, color: p.rule),
-
-              // Client-Side Encryption
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Row(
-                      children: [
-                        Icon(Icons.lock_outline, size: 18, color: p.signal),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            s.encryptionTitle,
-                            style: VaultText.heading(p, s.ar, size: 15),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: ctrl.hasEncryptionPassword
-                                ? p.signalSoft
-                                : p.surfaceAlt,
-                            borderRadius: BorderRadius.circular(VaultRadii.xs),
-                            border: Border.all(
-                              color: ctrl.hasEncryptionPassword
-                                  ? p.signal.withValues(alpha: 0.45)
-                                  : p.rule,
-                            ),
-                          ),
-                          child: Text(
-                            ctrl.hasEncryptionPassword
-                                ? s.keyActiveBadge
-                                : s.keyUnsetBadge,
-                            style: VaultText.body(
-                              p,
-                              s.ar,
-                              size: 11,
-                              weight: FontWeight.w700,
-                              color:
-                                  ctrl.hasEncryptionPassword ? p.ink : p.muted,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      s.encryptionSub,
-                      style: VaultText.body(p, s.ar, size: 12.5, color: p.muted),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: _encPassCtrl,
-                      obscureText: true,
-                      style: VaultText.body(p, s.ar, size: 14),
-                      decoration: InputDecoration(
-                        hintText: s.encPassHint,
-                        hintStyle:
-                            VaultText.body(p, s.ar, size: 14, color: p.muted),
-                        filled: true,
-                        fillColor: p.surfaceAlt,
-                        contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 12),
-                        border: inputBorder,
-                        enabledBorder: inputBorder,
-                        focusedBorder: focusedInputBorder,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: ElevatedButton(
-                            onPressed: () {
-                              HapticFeedback.mediumImpact();
-                              ctrl.setEncryptionPassword(_encPassCtrl.text);
-                            },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: p.signal,
-                              foregroundColor: p.signalInk,
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(
-                                borderRadius:
-                                    BorderRadius.circular(VaultRadii.sm),
-                              ),
-                            ),
-                            child: Text(
-                              s.applyPassword,
-                              style: VaultText.body(
-                                p,
-                                s.ar,
-                                size: 13.5,
-                                weight: FontWeight.w700,
-                                color: p.signalInk,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        OutlinedButton(
-                          onPressed: () {
-                            _encPassCtrl.clear();
-                            ctrl.setEncryptionPassword(null);
-                          },
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: p.muted,
-                            side: BorderSide(color: p.rule),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(VaultRadii.sm),
-                            ),
-                          ),
-                          child: Text(s.clear),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
+          style: VaultText.body(p, s.ar, size: 13.5, color: p.secondary),
         ),
         const SizedBox(height: 24),
 
-        // 2. Display & Storage Ledger
+        // 1. Account & Security
         VaultSectionHeader(
           palette: p,
           isArabic: s.ar,
-          title: s.displayAndStorageTitle,
+          title: s.sectionAccountSecurity,
         ),
         VaultSurface(
           palette: p,
-          borderRadius: VaultRadii.md,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Appearance & Language
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(s.appearanceTitle,
-                        style: VaultText.heading(p, s.ar, size: 15)),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        _SegmentedPill(
-                          palette: p,
-                          isArabic: s.ar,
-                          label: s.themeSystem,
-                          active: ctrl.themeMode == ThemeMode.system,
-                          onTap: () => ctrl.setThemeMode(ThemeMode.system),
-                        ),
-                        const SizedBox(width: 8),
-                        _SegmentedPill(
-                          palette: p,
-                          isArabic: s.ar,
-                          label: s.themeLight,
-                          active: ctrl.themeMode == ThemeMode.light,
-                          onTap: () => ctrl.setThemeMode(ThemeMode.light),
-                        ),
-                        const SizedBox(width: 8),
-                        _SegmentedPill(
-                          palette: p,
-                          isArabic: s.ar,
-                          label: s.themeDark,
-                          active: ctrl.themeMode == ThemeMode.dark,
-                          onTap: () => ctrl.setThemeMode(ThemeMode.dark),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        _SegmentedPill(
-                          palette: p,
-                          isArabic: s.ar,
-                          label: 'English',
-                          active: !ctrl.isArabic,
-                          onTap: () => ctrl.setArabic(false),
-                        ),
-                        const SizedBox(width: 8),
-                        _SegmentedPill(
-                          palette: p,
-                          isArabic: s.ar,
-                          label: 'العربية',
-                          active: ctrl.isArabic,
-                          onTap: () => ctrl.setArabic(true),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              Divider(height: 1, thickness: 1, color: p.rule),
-
-              // Vault Storage Stats
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(s.storageStatsTitle,
-                            style: VaultText.heading(p, s.ar, size: 15)),
-                        Text(
-                          formatBytes(totalBytes),
-                          style: VaultText.tabular(
-                            p,
-                            s.ar,
-                            size: 14,
-                            weight: FontWeight.w700,
-                            color: p.cobalt,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      s.foldersAndFiles(
-                          ctrl.snapshot.allFolders.length, files.length),
-                      style: VaultText.tabular(p, s.ar, size: 12),
-                    ),
-                    const SizedBox(height: 12),
-                    VaultProportionalTape(
-                      palette: p,
-                      imageBytes: imgBytes,
-                      pdfBytes: pdfBytes,
-                      videoAudioBytes: videoBytes,
-                      otherBytes: otherBytes,
-                      height: 6,
-                      borderRadius: VaultRadii.pill,
-                    ),
-                    const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 14,
-                      runSpacing: 6,
-                      children: [
-                        _LegendDot(
-                            palette: p,
-                            isArabic: s.ar,
-                            color: p.signal,
-                            label: '${s.filterImages}: ${formatBytes(imgBytes)}'),
-                        _LegendDot(
-                            palette: p,
-                            isArabic: s.ar,
-                            color: p.danger,
-                            label: 'PDF: ${formatBytes(pdfBytes)}'),
-                        _LegendDot(
-                            palette: p,
-                            isArabic: s.ar,
-                            color: p.cobalt,
-                            label: '${s.filterVideo}: ${formatBytes(videoBytes)}'),
-                        _LegendDot(
-                            palette: p,
-                            isArabic: s.ar,
-                            color: p.ink,
-                            label:
-                                '${s.filterOther}: ${formatBytes(otherBytes)}'),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              Divider(height: 1, thickness: 1, color: p.rule),
-
-              // Chunk Size (RTL-safe directional padding)
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(s.uploadChunkSize,
-                        style: VaultText.heading(p, s.ar, size: 15)),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: _chunks.map((mib) {
-                        final active = ctrl.chunkSizeMiB == mib;
-                        return Expanded(
-                          child: Padding(
-                            padding: EdgeInsetsDirectional.only(
-                                end: mib == _chunks.last ? 0 : 8),
-                            child: VaultTap(
-                              onTap: () {
-                                HapticFeedback.selectionClick();
-                                ctrl.setChunkSizeMiB(mib);
-                              },
-                              child: AnimatedContainer(
-                                duration: motion,
-                                curve: Curves.easeOutCubic,
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 10),
-                                decoration: BoxDecoration(
-                                  color: active ? p.cobalt : p.surfaceAlt,
-                                  borderRadius:
-                                      BorderRadius.circular(VaultRadii.sm),
-                                  border: Border.all(
-                                      color: active ? p.cobalt : p.rule),
-                                ),
-                                alignment: Alignment.center,
-                                child: Text(
-                                  '$mib MiB',
-                                  style: VaultText.tabular(
-                                    p,
-                                    s.ar,
-                                    size: 12,
-                                    weight: FontWeight.w700,
-                                    color: active ? p.accentInk : p.ink,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ],
-                ),
-              ),
-              Divider(height: 1, thickness: 1, color: p.rule),
-
-              // Storage Destination
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      s.storageDestination,
-                      style: VaultText.heading(p, s.ar, size: 15),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      s.storageDestSub,
-                      style: VaultText.body(p, s.ar, size: 12, color: p.muted),
-                    ),
-                    const SizedBox(height: 12),
-                    VaultTap(
-                      onTap: () {
-                        HapticFeedback.selectionClick();
-                        _showStorageDestinationSheet(context);
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 12),
-                        decoration: BoxDecoration(
-                          color: p.surfaceAlt,
-                          borderRadius: BorderRadius.circular(VaultRadii.sm),
-                          border: Border.all(color: p.rule),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              ctrl.targetChatId == null
-                                  ? Icons.bookmark_outline
-                                  : (effectiveKind == 'channel'
-                                      ? Icons.campaign_outlined
-                                      : Icons.folder_shared_outlined),
-                              size: 20,
-                              color: p.cobalt,
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    activeDestTitle,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: VaultText.body(
-                                      p,
-                                      s.ar,
-                                      size: 14,
-                                      weight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    activeDestSub,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: VaultText.body(
-                                      p,
-                                      s.ar,
-                                      size: 12,
-                                      color: p.muted,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Text(
-                              s.changeDestination,
-                              style: VaultText.body(
-                                p,
-                                s.ar,
-                                size: 13,
-                                weight: FontWeight.w700,
-                                color: p.cobalt,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Divider(height: 1, thickness: 1, color: p.rule),
-
-              // Local Cache Management
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(s.cacheTitle,
-                            style: VaultText.heading(p, s.ar, size: 15)),
-                        GestureDetector(
-                          onTap: _loadCacheStats,
-                          child: Text(
-                            s.refresh,
-                            style: VaultText.body(
-                              p,
-                              s.ar,
-                              size: 12.5,
-                              weight: FontWeight.w600,
-                              color: p.cobalt,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      '${_cacheStats.fileCount} ${s.ar ? "ملف" : "files"}, ${formatBytes(_cacheStats.totalBytes)}',
-                      style: VaultText.tabular(p, s.ar, size: 13),
-                    ),
-                    const SizedBox(height: 12),
-                    OutlinedButton(
-                      onPressed: _cacheStats.fileCount == 0
-                          ? null
-                          : () async {
-                              await ctrl.clearDownloadCache();
-                              await _loadCacheStats();
-                            },
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: p.danger,
-                        side: BorderSide(color: p.rule),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(VaultRadii.sm),
-                        ),
-                      ),
-                      child: Text(s.clearCache),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 24),
-
-        // 3. Encrypted Index Backup & Restore
-        VaultSectionHeader(
-          palette: p,
-          isArabic: s.ar,
-          title: s.backupRestoreTitle,
-        ),
-        VaultSurface(
-          palette: p,
-          borderRadius: VaultRadii.md,
+          borderRadius: VaultRadii.card,
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              TextField(
-                controller: _backupPassCtrl,
-                obscureText: true,
-                style: VaultText.body(p, s.ar, size: 14),
-                decoration: InputDecoration(
-                  hintText: s.backupPassHint,
-                  hintStyle: VaultText.body(p, s.ar, size: 14, color: p.muted),
-                  filled: true,
-                  fillColor: p.surfaceAlt,
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  border: inputBorder,
-                  enabledBorder: inputBorder,
-                  focusedBorder: focusedInputBorder,
-                ),
+              Row(
+                children: [
+                  Container(
+                    width: 46,
+                    height: 46,
+                    decoration: BoxDecoration(
+                      color: p.champagneSoft,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                          color: p.champagne.withValues(alpha: 0.45)),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      _accountInitials(ctrl.displayAccountName),
+                      style: VaultText.mono(
+                        p,
+                        size: 13,
+                        weight: FontWeight.w600,
+                        color: p.champagne,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          ctrl.displayAccountName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: VaultText.heading(p, s.ar, size: 16),
+                        ),
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            if (ctrl.displayUsername != null &&
+                                ctrl.displayUsername!.isNotEmpty) ...[
+                              Flexible(
+                                child: Text(
+                                  '@${ctrl.displayUsername}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: VaultText.mono(p,
+                                      size: 11.5, color: p.secondary),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                            ],
+                            VaultStatusDot(
+                              palette: p,
+                              isArabic: s.ar,
+                              dotColor: ctrl.authStatus.isAuthorized ||
+                                      ctrl.demoMode
+                                  ? p.signalGreen
+                                  : (ctrl.isReconnecting
+                                      ? p.champagne
+                                      : p.coral),
+                              label: ctrl.authStatus.isAuthorized ||
+                                      ctrl.demoMode
+                                  ? s.statusSynced
+                                  : (ctrl.isReconnecting
+                                      ? s.statusConnecting
+                                      : s.statusOfflineTap),
+                              onTap: (!ctrl.authStatus.isAuthorized &&
+                                      !ctrl.isReconnecting &&
+                                      ctrl.hasSavedSession)
+                                  ? ctrl.connect
+                                  : null,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                child: Divider(height: 1, thickness: 1, color: p.glassBorder),
+              ),
+              Row(
+                children: [
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: p.glassElevatedFill,
+                      borderRadius: BorderRadius.circular(VaultRadii.tile),
+                    ),
+                    alignment: Alignment.center,
+                    child: Icon(
+                      Icons.fingerprint_rounded,
+                      size: 19,
+                      color: ctrl.biometricEnabled
+                          ? p.signalGreen
+                          : p.champagne,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          s.biometricLockTitle,
+                          style: VaultText.body(
+                            p,
+                            s.ar,
+                            size: 14.5,
+                            weight: FontWeight.w500,
+                            applyArabicScale: false,
+                          ),
+                        ),
+                        Text(
+                          ctrl.biometricAvailable
+                              ? s.biometricLockSub
+                              : s.biometricUnavailable,
+                          style: VaultText.body(
+                            p,
+                            s.ar,
+                            size: 12,
+                            color: p.secondary,
+                            applyArabicScale: false,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  VaultToggle(
+                    palette: p,
+                    value: ctrl.biometricEnabled,
+                    onChanged: (value) async {
+                      await ctrl.setBiometricEnabled(value);
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Text(
+                s.autoLockTitle,
+                style: VaultText.monoText(p, s.autoLockTitle,
+                    size: 11, color: p.secondary),
               ),
               const SizedBox(height: 8),
-              TextField(
-                controller: _restoreMsgIdCtrl,
-                keyboardType: TextInputType.number,
-                style: VaultText.body(p, s.ar, size: 14),
-                decoration: InputDecoration(
-                  hintText: s.msgIdHint,
-                  hintStyle: VaultText.body(p, s.ar, size: 14, color: p.muted),
-                  filled: true,
-                  fillColor: p.surfaceAlt,
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  border: inputBorder,
-                  enabledBorder: inputBorder,
-                  focusedBorder: focusedInputBorder,
+              VaultSegmentedControl<int>(
+                palette: p,
+                isArabic: s.ar,
+                mono: true,
+                value: ctrl.autoLockMinutes,
+                onChanged: ctrl.setAutoLockMinutes,
+                options: [
+                  for (final m in _autoLockOptions)
+                    VaultSegmentOption(
+                      value: m,
+                      label: s.autoLockOptionLabel(m),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
+
+        // 2. Storage Destination
+        VaultSectionHeader(
+          palette: p,
+          isArabic: s.ar,
+          title: s.sectionStorageDest,
+        ),
+        VaultTap(
+          onTap: () => showStorageDestinationSheet(
+            context,
+            palette: p,
+            controller: ctrl,
+          ),
+          child: VaultSurface(
+            palette: p,
+            borderRadius: VaultRadii.card,
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: p.champagneSoft,
+                    borderRadius: BorderRadius.circular(VaultRadii.tile),
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(
+                    ctrl.targetChatId == null
+                        ? Icons.bookmark_border_rounded
+                        : (effectiveKind == 'channel'
+                            ? Icons.campaign_outlined
+                            : Icons.folder_shared_outlined),
+                    size: 19,
+                    color: p.champagne,
+                  ),
                 ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        activeDestTitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: VaultText.body(
+                          p,
+                          s.ar,
+                          size: 14.5,
+                          weight: FontWeight.w600,
+                          applyArabicScale: false,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        activeDestSub,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: VaultText.monoText(p, activeDestSub,
+                            size: 11, color: p.secondary),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                VaultMonoChip(
+                  palette: p,
+                  label: s.changeDestination,
+                  textColor: p.champagne,
+                  borderColor: p.champagne.withValues(alpha: 0.4),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 24),
+
+        // 3. Encryption
+        VaultSectionHeader(
+          palette: p,
+          isArabic: s.ar,
+          title: s.sectionEncryption,
+        ),
+        VaultSurface(
+          palette: p,
+          borderRadius: VaultRadii.card,
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: _showVaultPasswordDialog,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            s.encryptionTitle,
+                            style: VaultText.body(
+                              p,
+                              s.ar,
+                              size: 14.5,
+                              weight: FontWeight.w600,
+                              applyArabicScale: false,
+                            ),
+                          ),
+                          Text(
+                            s.encryptionSub,
+                            style: VaultText.body(
+                              p,
+                              s.ar,
+                              size: 12,
+                              color: p.secondary,
+                              applyArabicScale: false,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  VaultToggle(
+                    palette: p,
+                    value: ctrl.hasEncryptionPassword,
+                    onChanged: (enable) {
+                      if (enable) {
+                        _showVaultPasswordDialog();
+                      } else {
+                        ctrl.setEncryptionPassword(null);
+                      }
+                    },
+                  ),
+                ],
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Divider(height: 1, thickness: 1, color: p.glassBorder),
+              ),
+              Row(
+                children: [
+                  Icon(
+                    Icons.verified_user_outlined,
+                    size: 16,
+                    color: ctrl.hasEncryptionPassword
+                        ? p.signalGreen
+                        : p.secondary,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      s.encryptionAlgoRow,
+                      style: VaultText.mono(p, size: 12, color: p.ink),
+                    ),
+                  ),
+                  VaultMonoChip(
+                    palette: p,
+                    label: ctrl.hasEncryptionPassword
+                        ? s.keyActiveBadge
+                        : s.keyUnsetBadge,
+                    dotColor: ctrl.hasEncryptionPassword
+                        ? p.signalGreen
+                        : p.secondary,
+                    textColor: ctrl.hasEncryptionPassword
+                        ? p.signalGreen
+                        : p.secondary,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Text(
+                s.uploadChunkSize,
+                style: VaultText.monoText(p, s.uploadChunkSize,
+                    size: 11, color: p.secondary),
+              ),
+              const SizedBox(height: 8),
+              VaultSegmentedControl<int>(
+                palette: p,
+                isArabic: s.ar,
+                mono: true,
+                value: ctrl.chunkSizeMiB,
+                onChanged: ctrl.setChunkSizeMiB,
+                options: [
+                  for (final mib in _chunks)
+                    VaultSegmentOption(value: mib, label: '$mib MiB'),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
+
+        // 4. Backup
+        VaultSectionHeader(
+          palette: p,
+          isArabic: s.ar,
+          title: s.sectionBackup,
+          trailing: Text(
+            '${s.lastBackupLabel}: $lastBackupLabel',
+            style: VaultText.monoText(
+              p,
+              '${s.lastBackupLabel}: $lastBackupLabel',
+              size: 10.5,
+              color: p.secondary,
+            ),
+          ),
+        ),
+        VaultSurface(
+          palette: p,
+          borderRadius: VaultRadii.card,
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            children: [
+              _SettingsActionRow(
+                palette: p,
+                isArabic: s.ar,
+                icon: Icons.cloud_upload_outlined,
+                title: s.backupIndex,
+                tone: p.champagne,
+                onTap: () => _showBackupDialog(isRestore: false),
+              ),
+              Divider(height: 1, thickness: 1, color: p.glassBorder),
+              _SettingsActionRow(
+                palette: p,
+                isArabic: s.ar,
+                icon: Icons.cloud_download_outlined,
+                title: s.restoreIndex,
+                tone: p.ink,
+                onTap: () => _showBackupDialog(isRestore: true),
+              ),
+              Divider(height: 1, thickness: 1, color: p.glassBorder),
+              _SettingsActionRow(
+                palette: p,
+                isArabic: s.ar,
+                icon: Icons.cleaning_services_outlined,
+                title: s.cacheTitle,
+                trailingMono: formatBytes(_cacheStats.totalBytes),
+                tone: _cacheStats.fileCount > 0 ? p.coral : p.secondary,
+                onTap: _cacheStats.fileCount == 0
+                    ? _loadCacheStats
+                    : () async {
+                        await ctrl.clearDownloadCache();
+                        await _loadCacheStats();
+                      },
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
+
+        // 5. Appearance & Language (Light / Dark / Auto miniature theme preview tiles + AR/EN)
+        VaultSectionHeader(
+          palette: p,
+          isArabic: s.ar,
+          title: s.sectionAppearanceLang,
+        ),
+        VaultSurface(
+          palette: p,
+          borderRadius: VaultRadii.card,
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                s.appearanceTitle,
+                style: VaultText.monoText(p, s.appearanceTitle,
+                    size: 11, color: p.secondary),
               ),
               const SizedBox(height: 10),
               Row(
                 children: [
                   Expanded(
-                    child: ElevatedButton(
-                      onPressed: () {
-                        if (_backupPassCtrl.text.isEmpty) return;
-                        ctrl.backupIndex(_backupPassCtrl.text);
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: p.cobalt,
-                        foregroundColor: p.accentInk,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(VaultRadii.sm),
-                        ),
-                      ),
-                      child: Text(s.backupIndex),
+                    child: _ThemePreviewTile(
+                      palette: p,
+                      isArabic: s.ar,
+                      label: s.themeLight,
+                      mode: ThemeMode.light,
+                      selected: ctrl.themeMode == ThemeMode.light,
+                      onTap: () => ctrl.setThemeMode(ThemeMode.light),
                     ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: OutlinedButton(
-                      onPressed: () {
-                        if (_backupPassCtrl.text.isEmpty) return;
-                        final msgId =
-                            int.tryParse(_restoreMsgIdCtrl.text.trim());
-                        ctrl.restoreIndex(_backupPassCtrl.text, msgId);
-                      },
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: p.ink,
-                        side: BorderSide(color: p.rule),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(VaultRadii.sm),
-                        ),
-                      ),
-                      child: Text(s.restoreIndex),
+                    child: _ThemePreviewTile(
+                      palette: p,
+                      isArabic: s.ar,
+                      label: s.themeDark,
+                      mode: ThemeMode.dark,
+                      selected: ctrl.themeMode == ThemeMode.dark,
+                      onTap: () => ctrl.setThemeMode(ThemeMode.dark),
                     ),
                   ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _ThemePreviewTile(
+                      palette: p,
+                      isArabic: s.ar,
+                      label: s.themeSystem,
+                      mode: ThemeMode.system,
+                      selected: ctrl.themeMode == ThemeMode.system,
+                      onTap: () => ctrl.setThemeMode(ThemeMode.system),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Text(
+                s.languageLabel,
+                style: VaultText.monoText(p, s.languageLabel,
+                    size: 11, color: p.secondary),
+              ),
+              const SizedBox(height: 8),
+              VaultSegmentedControl<bool>(
+                palette: p,
+                isArabic: s.ar,
+                value: ctrl.isArabic,
+                onChanged: ctrl.setArabic,
+                options: const [
+                  VaultSegmentOption(value: true, label: 'العربية'),
+                  VaultSegmentOption(value: false, label: 'English'),
                 ],
               ),
             ],
           ),
         ),
-      ],
-    );
-  }
-}
+        const SizedBox(height: 24),
 
-class _SegmentedPill extends StatelessWidget {
-  final AppPalette palette;
-  final bool isArabic;
-  final String label;
-  final bool active;
-  final VoidCallback onTap;
-
-  const _SegmentedPill({
-    required this.palette,
-    required this.isArabic,
-    required this.label,
-    required this.active,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final motion = vaultMotion(context, 160);
-    return Expanded(
-      child: VaultTap(
-        onTap: () {
-          HapticFeedback.selectionClick();
-          onTap();
-        },
-        child: AnimatedContainer(
-          duration: motion,
-          curve: Curves.easeOutCubic,
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            color: active ? palette.cobalt : palette.surfaceAlt,
-            borderRadius: BorderRadius.circular(VaultRadii.sm),
-            border: Border.all(
-                color: active ? palette.cobalt : palette.rule),
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            label,
-            style: VaultText.body(
-              palette,
-              isArabic,
-              size: 12.5,
-              weight: FontWeight.w700,
-              color: active ? palette.accentInk : palette.ink,
-            ),
+        // 6. About
+        VaultSectionHeader(
+          palette: p,
+          isArabic: s.ar,
+          title: s.sectionAbout,
+        ),
+        VaultSurface(
+          palette: p,
+          borderRadius: VaultRadii.card,
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Image.asset(
+                  'assets/icon.png',
+                  width: 34,
+                  height: 34,
+                  fit: BoxFit.cover,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          s.appTitle,
+                          style: VaultText.heading(p, s.ar, size: 15),
+                        ),
+                        Text(
+                          'v1.0.0+1',
+                          style: VaultText.mono(p,
+                              size: 11, color: p.champagne),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      s.aboutFooterText,
+                      style: VaultText.body(
+                        p,
+                        s.ar,
+                        size: 12,
+                        color: p.secondary,
+                        applyArabicScale: false,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
-      ),
-    );
-  }
-}
+        const SizedBox(height: 20),
 
-class _LegendDot extends StatelessWidget {
-  final AppPalette palette;
-  final bool isArabic;
-  final Color color;
-  final String label;
-
-  const _LegendDot({
-    required this.palette,
-    required this.isArabic,
-    required this.color,
-    required this.label,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 8,
-          height: 8,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-        ),
-        const SizedBox(width: 5),
-        Text(
-          label,
-          style: VaultText.tabular(palette, isArabic,
-              size: 11.5, weight: FontWeight.w500),
+        // 7. Log out in coral with confirmation dialog
+        VaultPillButton(
+          palette: p,
+          isArabic: s.ar,
+          variant: VaultPillVariant.danger,
+          icon: Icons.logout_rounded,
+          label: ctrl.demoMode ? s.exitPreview : s.logOut,
+          onPressed: _showLogoutConfirmDialog,
         ),
       ],
     );
   }
-}
 
-class _StorageDestinationSheet extends StatefulWidget {
-  final AppPalette palette;
-  final AppController controller;
-
-  const _StorageDestinationSheet({
-    required this.palette,
-    required this.controller,
-  });
-
-  @override
-  State<_StorageDestinationSheet> createState() =>
-      _StorageDestinationSheetState();
-}
-
-class _StorageDestinationSheetState extends State<_StorageDestinationSheet> {
-  final _searchCtrl = TextEditingController();
-  final _newVaultCtrl = TextEditingController();
-  late bool _ownedOnly;
-  bool _showCreateForm = false;
-  String _newVaultKind = 'group';
-  bool _awaitingCreatedVault = false;
-
-  @override
-  void initState() {
-    super.initState();
-    final ctrl = widget.controller;
-    final selected = ctrl.storageChats
-        .where((c) => c.id == ctrl.targetChatId)
-        .firstOrNull;
-    _ownedOnly = selected == null || selected.isCreator;
-    ctrl.addListener(_onControllerChanged);
-    if (ctrl.hasNativeCore && !ctrl.demoMode) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) ctrl.refreshChats();
-      });
+  String _accountInitials(String name) {
+    final parts = name
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((w) => w.isNotEmpty)
+        .toList();
+    if (parts.isEmpty) return 'BD';
+    if (parts.length == 1) {
+      return parts.first
+          .substring(0, parts.first.length >= 2 ? 2 : 1)
+          .toUpperCase();
     }
-  }
-
-  @override
-  void dispose() {
-    widget.controller.removeListener(_onControllerChanged);
-    _searchCtrl.dispose();
-    _newVaultCtrl.dispose();
-    super.dispose();
-  }
-
-  void _onControllerChanged() {
-    if (_awaitingCreatedVault && !widget.controller.isCreatingVault) {
-      _awaitingCreatedVault = false;
-      if (mounted && widget.controller.targetChatId != null) {
-        Navigator.pop(context);
-      }
-    }
-  }
-
-  void _submitNewVault() {
-    final name = _newVaultCtrl.text.trim();
-    final ctrl = widget.controller;
-    if (name.isEmpty || ctrl.isCreatingVault) return;
-    HapticFeedback.mediumImpact();
-    if (ctrl.demoMode || !ctrl.hasNativeCore) {
-      ctrl.createStorageVault(title: name, kind: _newVaultKind);
-      if (mounted) Navigator.pop(context);
-      return;
-    }
-    _awaitingCreatedVault = true;
-    ctrl.createStorageVault(title: name, kind: _newVaultKind);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final p = widget.palette;
-    final ctrl = widget.controller;
-
-    return AnimatedBuilder(
-      animation: ctrl,
-      builder: (context, _) {
-        final s = ctrl.strings;
-        final motion = vaultMotion(context, 180);
-        final query = _searchCtrl.text.trim().toLowerCase();
-        final ownedChats = ctrl.storageChats.where((c) => c.isCreator).toList();
-        final sourceChats = _ownedOnly ? ownedChats : ctrl.storageChats;
-        final filteredChats = query.isEmpty
-            ? sourceChats
-            : sourceChats
-                .where((c) => c.title.toLowerCase().contains(query))
-                .toList();
-        final showSavedMessages = query.isEmpty ||
-            s.savedMessagesDefault.toLowerCase().contains(query) ||
-            'saved messages'.contains(query);
-
-        final inputBorder = OutlineInputBorder(
-          borderRadius: BorderRadius.circular(VaultRadii.sm),
-          borderSide: BorderSide(color: p.rule),
-        );
-        final focusedInputBorder = OutlineInputBorder(
-          borderRadius: BorderRadius.circular(VaultRadii.sm),
-          borderSide: BorderSide(color: p.cobalt, width: 1.5),
-        );
-
-        return Directionality(
-          textDirection: s.ar ? TextDirection.rtl : TextDirection.ltr,
-          child: VaultSheetShell(
-            palette: p,
-            outerPadding: EdgeInsets.fromLTRB(
-              12,
-              0,
-              12,
-              16 + MediaQuery.of(context).viewInsets.bottom,
-            ),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.of(context).size.height * 0.78,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Flexible(
-                        child: Text(
-                          s.storageDestination,
-                          style: VaultText.heading(p, s.ar, size: 17),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      VaultTap(
-                        onTap: ctrl.isLoadingChats
-                            ? null
-                            : () {
-                                HapticFeedback.selectionClick();
-                                ctrl.refreshChats();
-                              },
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (ctrl.isLoadingChats)
-                              SizedBox(
-                                width: 14,
-                                height: 14,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: p.cobalt,
-                                ),
-                              )
-                            else
-                              AppSvgIcon(
-                                AppIcons.refresh,
-                                size: 14,
-                                color: p.cobalt,
-                              ),
-                            const SizedBox(width: 5),
-                            Text(
-                              s.refresh,
-                              style: VaultText.body(
-                                p,
-                                s.ar,
-                                size: 12.5,
-                                weight: FontWeight.w600,
-                                color: p.cobalt,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    s.storageDestSub,
-                    style: VaultText.body(p, s.ar, size: 12.5, color: p.muted),
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Toggle inline New Private Vault form
-                  OutlinedButton.icon(
-                    onPressed: () {
-                      HapticFeedback.selectionClick();
-                      setState(() => _showCreateForm = !_showCreateForm);
-                    },
-                    icon: Icon(
-                      _showCreateForm ? Icons.close : Icons.add,
-                      size: 16,
-                      color: p.cobalt,
-                    ),
-                    label: Text(s.newPrivateVaultBtn),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: p.cobalt,
-                      side: BorderSide(
-                        color: _showCreateForm ? p.cobalt : p.rule,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(VaultRadii.sm),
-                      ),
-                    ),
-                  ),
-                  AnimatedSize(
-                    duration: motion,
-                    curve: Curves.easeOutCubic,
-                    child: _showCreateForm
-                        ? Container(
-                            margin: const EdgeInsets.only(top: 10),
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: p.surfaceAlt,
-                              borderRadius:
-                                  BorderRadius.circular(VaultRadii.sm),
-                              border: Border.all(color: p.rule),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                TextField(
-                                  controller: _newVaultCtrl,
-                                  textInputAction: TextInputAction.done,
-                                  onSubmitted: (_) => _submitNewVault(),
-                                  style: VaultText.body(p, s.ar, size: 14),
-                                  decoration: InputDecoration(
-                                    hintText: s.newVaultNameHint,
-                                    hintStyle: VaultText.body(p, s.ar,
-                                        size: 13.5, color: p.muted),
-                                    filled: true,
-                                    fillColor: p.surface,
-                                    contentPadding: const EdgeInsets.symmetric(
-                                        horizontal: 12, vertical: 10),
-                                    border: inputBorder,
-                                    enabledBorder: inputBorder,
-                                    focusedBorder: focusedInputBorder,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Row(
-                                  children: [
-                                    _SegmentedPill(
-                                      palette: p,
-                                      isArabic: s.ar,
-                                      label: s.privateGroupOption,
-                                      active: _newVaultKind == 'group',
-                                      onTap: () => setState(
-                                          () => _newVaultKind = 'group'),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    _SegmentedPill(
-                                      palette: p,
-                                      isArabic: s.ar,
-                                      label: s.privateChannelOption,
-                                      active: _newVaultKind == 'channel',
-                                      onTap: () => setState(
-                                          () => _newVaultKind = 'channel'),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 10),
-                                ElevatedButton(
-                                  onPressed: ctrl.isCreatingVault
-                                      ? null
-                                      : _submitNewVault,
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: p.signal,
-                                    foregroundColor: p.signalInk,
-                                    elevation: 0,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius:
-                                          BorderRadius.circular(VaultRadii.sm),
-                                    ),
-                                  ),
-                                  child: Text(
-                                    ctrl.isCreatingVault
-                                        ? s.creatingVaultLabel
-                                        : s.createAndSelectVault,
-                                    style: VaultText.body(
-                                      p,
-                                      s.ar,
-                                      size: 13.5,
-                                      weight: FontWeight.w700,
-                                      color: p.signalInk,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          )
-                        : const SizedBox.shrink(),
-                  ),
-                  const SizedBox(height: 10),
-
-                  // Recessed Search Bar
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: p.surfaceAlt,
-                      borderRadius: BorderRadius.circular(VaultRadii.sm),
-                      border: Border.all(color: p.rule),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(Icons.search, size: 17, color: p.muted),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: TextField(
-                            controller: _searchCtrl,
-                            onChanged: (_) => setState(() {}),
-                            style: VaultText.body(p, s.ar, size: 14),
-                            decoration: InputDecoration(
-                              hintText: s.searchVaultChatsHint,
-                              hintStyle: VaultText.body(p, s.ar,
-                                  size: 13.5, color: p.muted),
-                              border: InputBorder.none,
-                            ),
-                          ),
-                        ),
-                        if (_searchCtrl.text.isNotEmpty)
-                          GestureDetector(
-                            onTap: () => setState(() => _searchCtrl.clear()),
-                            child: Icon(Icons.close, size: 16, color: p.muted),
-                          ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-
-                  // Baseline-indexed ownership filter tabs
-                  Container(
-                    decoration: BoxDecoration(
-                      border: Border(
-                        bottom: BorderSide(color: p.rule, width: 1),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        _SheetFilterTab(
-                          palette: p,
-                          isArabic: s.ar,
-                          label: s.filterOwnedByMe,
-                          count: ownedChats.length,
-                          active: _ownedOnly,
-                          onTap: () {
-                            HapticFeedback.selectionClick();
-                            setState(() => _ownedOnly = true);
-                          },
-                        ),
-                        const SizedBox(width: 8),
-                        _SheetFilterTab(
-                          palette: p,
-                          isArabic: s.ar,
-                          label: s.filterAdminAccess,
-                          count: ctrl.storageChats.length,
-                          active: !_ownedOnly,
-                          onTap: () {
-                            HapticFeedback.selectionClick();
-                            setState(() => _ownedOnly = false);
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-
-                  // Scrollable Destination Ledger
-                  Flexible(
-                    child: ListView(
-                      shrinkWrap: true,
-                      children: [
-                        if (showSavedMessages)
-                          _DestinationLedgerRow(
-                            palette: p,
-                            isArabic: s.ar,
-                            icon: Icons.bookmark_outline,
-                            title: s.savedMessagesDefault,
-                            subtitle: s.vaultSealLabel,
-                            selected: ctrl.targetChatId == null,
-                            showTopBorder: false,
-                            onTap: () {
-                              ctrl.setTargetChat(null);
-                              Navigator.pop(context);
-                            },
-                          ),
-                        for (var i = 0; i < filteredChats.length; i++)
-                          _DestinationLedgerRow(
-                            palette: p,
-                            isArabic: s.ar,
-                            icon: filteredChats[i].kind == 'channel'
-                                ? Icons.campaign_outlined
-                                : Icons.folder_shared_outlined,
-                            title: filteredChats[i].title,
-                            subtitle: _formatChatMeta(filteredChats[i], s),
-                            selected: ctrl.targetChatId == filteredChats[i].id,
-                            showTopBorder: showSavedMessages || i > 0,
-                            onTap: () {
-                              ctrl.setTargetChat(filteredChats[i].id);
-                              Navigator.pop(context);
-                            },
-                          ),
-                        if (filteredChats.isEmpty)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 18),
-                            child: Text(
-                              s.noOwnedChatsFound,
-                              textAlign: TextAlign.center,
-                              style: VaultText.body(p, s.ar,
-                                  size: 13, color: p.muted),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  String _formatChatMeta(StorageChat chat, AppStrings s) {
-    final sep = s.ar ? '، ' : ', ';
-    final parts = <String>[
-      chat.kind == 'channel' ? s.channelKindLabel : s.groupKindLabel,
-      chat.isCreator ? s.roleOwnerBadge : s.roleAdminBadge,
-      if (chat.isPrivate) s.privateBadge,
-      if (chat.memberCount != null) s.membersCountLabel(chat.memberCount!),
-    ];
-    return parts.join(sep);
+    return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
   }
 }
 
-class _SheetFilterTab extends StatelessWidget {
-  final AppPalette palette;
-  final bool isArabic;
-  final String label;
-  final int count;
-  final bool active;
-  final VoidCallback onTap;
-
-  const _SheetFilterTab({
-    required this.palette,
-    required this.isArabic,
-    required this.label,
-    required this.count,
-    required this.active,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return VaultTap(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        decoration: BoxDecoration(
-          border: Border(
-            bottom: BorderSide(
-              color: active ? palette.cobalt : Colors.transparent,
-              width: 2,
-            ),
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              label,
-              style: VaultText.body(
-                palette,
-                isArabic,
-                size: 12.5,
-                weight: active ? FontWeight.w700 : FontWeight.w500,
-                color: active ? palette.ink : palette.muted,
-              ),
-            ),
-            const SizedBox(width: 6),
-            Text(
-              '$count',
-              style: VaultText.tabular(
-                palette,
-                isArabic,
-                size: 11.5,
-                weight: FontWeight.w600,
-                color: active ? palette.cobalt : palette.muted,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _DestinationLedgerRow extends StatelessWidget {
+class _SettingsActionRow extends StatelessWidget {
   final AppPalette palette;
   final bool isArabic;
   final IconData icon;
   final String title;
-  final String subtitle;
-  final bool selected;
-  final bool showTopBorder;
+  final String? trailingMono;
+  final Color tone;
   final VoidCallback onTap;
 
-  const _DestinationLedgerRow({
+  const _SettingsActionRow({
     required this.palette,
     required this.isArabic,
     required this.icon,
     required this.title,
-    required this.subtitle,
-    required this.selected,
-    required this.showTopBorder,
+    this.trailingMono,
+    required this.tone,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
+    final p = palette;
+    return VaultTap(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 4),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: tone),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                title,
+                style: VaultText.body(
+                  p,
+                  isArabic,
+                  size: 14,
+                  weight: FontWeight.w500,
+                  applyArabicScale: false,
+                ),
+              ),
+            ),
+            if (trailingMono != null) ...[
+              Text(
+                trailingMono!,
+                style: VaultText.mono(p, size: 11.5, color: p.secondary),
+              ),
+              const SizedBox(width: 6),
+            ],
+            Icon(
+              isArabic
+                  ? Icons.chevron_left_rounded
+                  : Icons.chevron_right_rounded,
+              size: 18,
+              color: p.secondary,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ThemePreviewTile extends StatelessWidget {
+  final AppPalette palette;
+  final bool isArabic;
+  final String label;
+  final ThemeMode mode;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ThemePreviewTile({
+    required this.palette,
+    required this.isArabic,
+    required this.label,
+    required this.mode,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final p = palette;
+    return VaultTap(
       onTap: () {
         HapticFeedback.selectionClick();
         onTap();
       },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+      child: AnimatedContainer(
+        duration: vaultMotion(context, 250),
+        curve: Curves.easeOut,
+        padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
-          color: selected ? palette.cobaltSoft : Colors.transparent,
-          border: showTopBorder
-              ? Border(top: BorderSide(color: palette.rule, width: 1))
-              : null,
+          color: selected ? p.champagneSoft : p.glassFill,
+          borderRadius: BorderRadius.circular(VaultRadii.md),
+          border: Border.all(
+            color: selected ? p.champagne : p.glassBorder,
+            width: selected ? 1.5 : 1,
+          ),
         ),
-        child: Row(
+        child: Column(
           children: [
-            Icon(
-              icon,
-              size: 19,
-              color: selected ? palette.cobalt : palette.muted,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: VaultText.body(
-                      palette,
-                      isArabic,
-                      size: 14,
-                      weight: selected ? FontWeight.w700 : FontWeight.w500,
-                      color: selected ? palette.cobalt : palette.ink,
-                    ),
-                  ),
-                  const SizedBox(height: 1),
-                  Text(
-                    subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: VaultText.body(
-                      palette,
-                      isArabic,
-                      size: 11.5,
-                      color: palette.muted,
-                    ),
-                  ),
-                ],
+            SizedBox(
+              height: 48,
+              width: double.infinity,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: _buildMiniThemeCanvas(),
               ),
             ),
-            if (selected)
-              Icon(Icons.check, size: 18, color: palette.cobalt),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: VaultText.body(
+                p,
+                isArabic,
+                size: 12,
+                weight: selected ? FontWeight.w600 : FontWeight.w400,
+                color: selected ? p.ink : p.secondary,
+                applyArabicScale: false,
+              ),
+            ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildMiniThemeCanvas() {
+    if (mode == ThemeMode.light) {
+      return Container(
+        color: const Color(0xFFF7F6F3),
+        padding: const EdgeInsets.all(6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              height: 10,
+              width: 34,
+              decoration: BoxDecoration(
+                color: const Color(0xFF17181C),
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+            const Spacer(),
+            Container(
+              height: 16,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(5),
+                border: Border.all(color: const Color(0x18000000)),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    if (mode == ThemeMode.dark) {
+      return Container(
+        color: const Color(0xFF050506),
+        padding: const EdgeInsets.all(6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              height: 10,
+              width: 34,
+              decoration: BoxDecoration(
+                color: const Color(0xFFD9D6CF),
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+            const Spacer(),
+            Container(
+              height: 16,
+              decoration: BoxDecoration(
+                color: const Color(0xFF1A1A1C),
+                borderRadius: BorderRadius.circular(5),
+                border: Border.all(color: const Color(0x24FFFFFF)),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    // System Auto split preview
+    return Row(
+      children: [
+        Expanded(
+          child: Container(
+            color: const Color(0xFFF7F6F3),
+            padding: const EdgeInsets.all(5),
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              child: Container(
+                height: 14,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ),
+          ),
+        ),
+        Expanded(
+          child: Container(
+            color: const Color(0xFF050506),
+            padding: const EdgeInsets.all(5),
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              child: Container(
+                height: 14,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1A1A1C),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

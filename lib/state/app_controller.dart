@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:material_ui/material_ui.dart' show ThemeMode;
 import 'package:flutter/foundation.dart';
+import 'package:material_ui/material_ui.dart' show ThemeMode;
 import 'package:path_provider/path_provider.dart';
 
 import '../l10n/app_strings.dart';
@@ -14,7 +14,7 @@ import '../services/notification_service.dart';
 import '../services/share_receiver_service.dart';
 import '../services/thumbnail_service.dart';
 
-enum MobileTab { files, recent, transfers, settings }
+enum MobileTab { files, transfers, recent, settings }
 
 const List<Folder> _initialDemoFolders = [
   Folder(id: 1, parentId: null, name: 'Documents', createdAt: 1731600000),
@@ -75,22 +75,28 @@ class AppController extends ChangeNotifier {
   StreamSubscription<BridgeEvent>? _sub;
   Timer? _floodTimer;
   Timer? _toastTimer;
+  DateTime? _backgroundedAt;
 
   bool demoMode = false;
-  ThemeMode themeMode = ThemeMode.system;
-  bool isArabic = false;
+  ThemeMode themeMode = ThemeMode.dark;
+  bool isArabic;
   bool isSelecting = false;
+  bool isLoadingVault = false;
   bool biometricEnabled = false;
   bool biometricAvailable = false;
   bool isLocked = false;
+  int autoLockMinutes = 1;
   bool _biometricPromptActive = false;
   bool hasSavedSession = false;
   bool isReconnecting = false;
   String? cachedFullName;
   String? cachedUsername;
   String? _encryptionPassword;
+  bool encryptBeforeUpload = true;
   bool _hasCustomChunkSize = false;
+  int? lastBackupAt;
   List<String> _pendingSharedPaths = const [];
+  List<String> pendingShareSheetPaths = const [];
   AuthStatus authStatus = const AuthStatus.disconnected();
   String? authError;
   String apiId = '';
@@ -140,9 +146,13 @@ class AppController extends ChangeNotifier {
   List<FileRecord> _demoAllFiles = List<FileRecord>.from(_initialDemoFiles);
   int floodWaitSeconds = 0;
   String? toastMessage;
+  bool toastIsError = false;
   final Map<int, String> _localPathsByFileId = {};
 
-  AppController({CoreBridge? bridge}) : _bridge = bridge ?? CoreBridge() {
+  AppController({
+    CoreBridge? bridge,
+    this.isArabic = true,
+  }) : _bridge = bridge ?? CoreBridge() {
     _init();
   }
 
@@ -154,6 +164,18 @@ class AppController extends ChangeNotifier {
       authStatus.fullName ?? cachedFullName ?? 'Telegram Vault';
   String? get displayUsername => authStatus.username ?? cachedUsername;
 
+  String activeDestinationTitle(AppStrings s) {
+    if (targetChatId == null) return s.savedMessagesDefault;
+    final match = storageChats.where((c) => c.id == targetChatId).firstOrNull;
+    return match?.title ?? cachedTargetChatTitle ?? 'Chat #$targetChatId';
+  }
+
+  bool get activeDestinationOwnedByMe {
+    if (targetChatId == null) return true;
+    final match = storageChats.where((c) => c.id == targetChatId).firstOrNull;
+    return match?.isCreator ?? true;
+  }
+
   @visibleForTesting
   void debugPrimeSavedSession({
     String fullName = 'Saved User',
@@ -163,6 +185,18 @@ class AppController extends ChangeNotifier {
     cachedFullName = fullName;
     cachedUsername = username;
     isReconnecting = true;
+    notifyListeners();
+  }
+
+  @visibleForTesting
+  void debugSetLoadingVault(bool loading) {
+    isLoadingVault = loading;
+    notifyListeners();
+  }
+
+  @visibleForTesting
+  void debugStageShareSheet(List<String> paths) {
+    pendingShareSheetPaths = List<String>.from(paths);
     notifyListeners();
   }
 
@@ -190,6 +224,20 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setAutoLockMinutes(int minutes) {
+    if (autoLockMinutes == minutes) return;
+    autoLockMinutes = minutes;
+    _saveConfig();
+    notifyListeners();
+  }
+
+  void setEncryptBeforeUpload(bool value) {
+    if (encryptBeforeUpload == value) return;
+    encryptBeforeUpload = value;
+    _saveConfig();
+    notifyListeners();
+  }
+
   Future<File?> _configFile() async {
     try {
       final docsDir = await getApplicationDocumentsDirectory();
@@ -213,10 +261,13 @@ class AppController extends ChangeNotifier {
         themeMode = ThemeMode.light;
       } else if (themeStr == 'dark') {
         themeMode = ThemeMode.dark;
-      } else {
+      } else if (themeStr == 'system') {
         themeMode = ThemeMode.system;
       }
       biometricEnabled = raw['biometric_enabled'] as bool? ?? false;
+      autoLockMinutes = (raw['auto_lock_minutes'] as num?)?.toInt() ?? 1;
+      lastBackupAt = (raw['last_backup_at'] as num?)?.toInt();
+      encryptBeforeUpload = raw['encrypt_before_upload'] as bool? ?? true;
       if (biometricEnabled) {
         isLocked = true;
       }
@@ -263,6 +314,9 @@ class AppController extends ChangeNotifier {
         'api_hash': apiHash,
         'is_arabic': isArabic,
         'biometric_enabled': biometricEnabled,
+        'auto_lock_minutes': autoLockMinutes,
+        'last_backup_at': lastBackupAt,
+        'encrypt_before_upload': encryptBeforeUpload,
         'has_saved_session': hasSavedSession,
         'cached_full_name': cachedFullName,
         'cached_username': cachedUsername,
@@ -316,35 +370,77 @@ class AppController extends ChangeNotifier {
 
   void _handleSharedFiles(List<String> paths) {
     if (paths.isEmpty) return;
-    if (authStatus.isAuthorized && !isLocked) {
-      uploadFiles(paths);
-      showToast(isArabic
-          ? 'جاري تشفير ورفع ${paths.length} ملف مشارك'
-          : 'Encrypting & uploading ${paths.length} shared file(s)');
+    if ((authStatus.isAuthorized || demoMode) && !isLocked) {
+      pendingShareSheetPaths = [...pendingShareSheetPaths, ...paths];
+      notifyListeners();
       return;
     }
     _pendingSharedPaths = [..._pendingSharedPaths, ...paths];
     showToast(isArabic
-        ? 'سيتم رفع ${paths.length} ملف فور فتح الخزنة'
-        : 'Queued ${paths.length} shared file(s) until vault unlock');
+        ? 'سيتم فتح شاشة الحفظ لـ ${paths.length} ملف فور فتح الخزنة'
+        : 'Staged ${paths.length} shared file(s) until vault unlock');
     notifyListeners();
   }
 
   void _flushPendingSharedFiles() {
-    if (_pendingSharedPaths.isEmpty || !authStatus.isAuthorized || isLocked) {
+    if (_pendingSharedPaths.isEmpty ||
+        (!authStatus.isAuthorized && !demoMode) ||
+        isLocked) {
       return;
     }
     final batch = List<String>.from(_pendingSharedPaths);
     _pendingSharedPaths = const [];
-    uploadFiles(batch);
+    pendingShareSheetPaths = [...pendingShareSheetPaths, ...batch];
+    notifyListeners();
+  }
+
+  void confirmPendingShareUpload({
+    int? folderId,
+    required bool encrypt,
+  }) {
+    final batch = List<String>.from(pendingShareSheetPaths);
+    pendingShareSheetPaths = const [];
+    setEncryptBeforeUpload(encrypt);
+    if (batch.isNotEmpty) {
+      uploadFiles(
+        batch,
+        targetFolderId: folderId,
+        encryptedOverride: encrypt,
+      );
+    }
+    notifyListeners();
+  }
+
+  void dismissPendingShareUpload() {
+    pendingShareSheetPaths = const [];
+    notifyListeners();
   }
 
   void onAppBackgrounded() {
+    _backgroundedAt = DateTime.now();
     if (biometricEnabled &&
         biometricAvailable &&
+        autoLockMinutes == 0 &&
         (authStatus.isAuthorized || hasSavedSession) &&
         !_biometricPromptActive &&
         !isLocked) {
+      isLocked = true;
+      notifyListeners();
+    }
+  }
+
+  void onAppResumed() {
+    final bgAt = _backgroundedAt;
+    _backgroundedAt = null;
+    if (bgAt == null ||
+        !biometricEnabled ||
+        !biometricAvailable ||
+        _biometricPromptActive ||
+        isLocked ||
+        (!authStatus.isAuthorized && !hasSavedSession)) {
+      return;
+    }
+    if (DateTime.now().difference(bgAt).inMinutes >= autoLockMinutes) {
       isLocked = true;
       notifyListeners();
     }
@@ -366,12 +462,19 @@ class AppController extends ChangeNotifier {
     }
   }
 
+  /// Fallback local unlock used when user confirms device passcode flow.
+  void unlockWithPasscodeFallback() {
+    isLocked = false;
+    notifyListeners();
+    _flushPendingSharedFiles();
+  }
+
   Future<bool> setBiometricEnabled(bool enable) async {
     if (enable) {
       final avail = await biometrics.isAvailable();
       biometricAvailable = avail;
       if (!avail) {
-        showToast(strings.biometricUnavailable);
+        showToast(strings.biometricUnavailable, isError: true);
         notifyListeners();
         return false;
       }
@@ -414,6 +517,7 @@ class AppController extends ChangeNotifier {
         if (auth.isAuthorized) {
           hasSavedSession = true;
           isReconnecting = false;
+          isLoadingVault = snapshot.files.isEmpty && snapshot.folders.isEmpty;
           cachedFullName = auth.fullName;
           cachedUsername = auth.username;
           _saveConfig();
@@ -433,13 +537,16 @@ class AppController extends ChangeNotifier {
             auth.kind == AuthStatusKind.awaitingPassword) {
           hasSavedSession = false;
           isReconnecting = false;
+          isLoadingVault = false;
           _saveConfig();
         } else if (auth.kind == AuthStatusKind.disconnected) {
           isReconnecting = false;
+          isLoadingVault = false;
         }
         notifyListeners();
       case SnapshotEvent(:final snapshot):
         this.snapshot = snapshot;
+        isLoadingVault = false;
         notifyListeners();
       case QueueUpdateEvent(
           :final event,
@@ -478,7 +585,7 @@ class AppController extends ChangeNotifier {
         } else if (event == 'task_failed' &&
             message != null &&
             message.isNotEmpty) {
-          showToast(message);
+          showToast(message, isError: true);
           notifications.showFailed(
             fileLabel: fileLabel ??
                 (fileId > 0 ? _fileNameForId(fileId) : 'Transfer'),
@@ -530,11 +637,12 @@ class AppController extends ChangeNotifier {
       case ErrorEvent(:final message):
         isLoadingChats = false;
         isCreatingVault = false;
+        isLoadingVault = false;
         if (!authStatus.isAuthorized) {
           authError = message;
           notifyListeners();
         } else {
-          showToast(message);
+          showToast(message, isError: true);
         }
     }
   }
@@ -554,8 +662,9 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void showToast(String message) {
+  void showToast(String message, {bool isError = false}) {
     toastMessage = message;
+    toastIsError = isError;
     _toastTimer?.cancel();
     _toastTimer = Timer(const Duration(seconds: 3), () {
       toastMessage = null;
@@ -573,6 +682,8 @@ class AppController extends ChangeNotifier {
 
   void enterDemoMode() {
     demoMode = true;
+    isLoadingVault = false;
+    lastBackupAt ??= 1731780000;
     authStatus = const AuthStatus.authorized(
       userId: 1,
       fullName: 'BIG DUCK Demo',
@@ -596,6 +707,7 @@ class AppController extends ChangeNotifier {
     demoMode = false;
     hasSavedSession = false;
     isReconnecting = false;
+    isLoadingVault = false;
     cachedFullName = null;
     cachedUsername = null;
     authStatus = const AuthStatus.disconnected();
@@ -669,6 +781,7 @@ class AppController extends ChangeNotifier {
     isReconnecting = false;
     isLoadingChats = false;
     isCreatingVault = false;
+    isLoadingVault = false;
     cachedFullName = null;
     cachedUsername = null;
     targetChatId = null;
@@ -793,7 +906,7 @@ class AppController extends ChangeNotifier {
 
   void moveFolder(int id, int? newParentId) {
     if (newParentId != null && isDescendantFolder(newParentId, id)) {
-      showToast(strings.cannotMoveIntoSelf);
+      showToast(strings.cannotMoveIntoSelf, isError: true);
       return;
     }
     if (demoMode || !hasNativeCore) {
@@ -944,9 +1057,15 @@ class AppController extends ChangeNotifier {
     }
   }
 
-  void uploadFiles(List<String> paths) {
+  void uploadFiles(
+    List<String> paths, {
+    int? targetFolderId,
+    bool? encryptedOverride,
+  }) {
     if (paths.isEmpty) return;
-    final folderId = snapshot.currentFolder?.id;
+    final folderId = targetFolderId ?? snapshot.currentFolder?.id;
+    final encrypted = encryptedOverride ??
+        (encryptBeforeUpload || hasEncryptionPassword);
     if (demoMode || !hasNativeCore) {
       final now = DateTime.now().millisecondsSinceEpoch;
       final added = <FileRecord>[];
@@ -980,14 +1099,15 @@ class AppController extends ChangeNotifier {
               ? File(paths[i]).lengthSync()
               : 1024 * 512,
           mimeType: mime,
-          sha256: 'demo-sha256',
-          isEncrypted: true,
+          sha256:
+              'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+          isEncrypted: encrypted,
           createdAt: now ~/ 1000,
         ));
       }
       _demoAllFiles = [...added, ..._demoAllFiles];
-      _refreshDemoView(folderId);
-      showToast('Added ${added.length} file(s) in demo mode');
+      _refreshDemoView(snapshot.currentFolder?.id);
+      showToast(strings.queuedUploadToast(added.length));
       return;
     }
     _bridge.sendCommand({
@@ -1016,6 +1136,15 @@ class AppController extends ChangeNotifier {
   TaskRecord? latestDownloadTaskFor(int fileId) {
     for (final t in snapshot.tasks.reversed) {
       if (t.fileId == fileId && t.kind == TaskKind.download) {
+        return t;
+      }
+    }
+    return null;
+  }
+
+  TaskRecord? latestTaskFor(int fileId) {
+    for (final t in snapshot.tasks.reversed) {
+      if (t.fileId == fileId) {
         return t;
       }
     }
@@ -1074,7 +1203,7 @@ class AppController extends ChangeNotifier {
                   fileId: t.fileId,
                   state: TaskState.running,
                   progress: t.progress,
-                  error: t.error,
+                  error: null,
                 )
               : t)
           .toList(growable: false);
@@ -1095,6 +1224,8 @@ class AppController extends ChangeNotifier {
       'dest_path': destPath,
     });
   }
+
+  Future<void> retryTask(TaskRecord task) => resumeTask(task);
 
   Future<CacheStats> getDownloadCacheStats() async {
     try {
@@ -1130,7 +1261,7 @@ class AppController extends ChangeNotifier {
       await thumbnails.clearCache();
       showToast(isArabic ? 'تم مسح الكاش المحلي' : 'Cleared local download cache');
     } catch (e) {
-      showToast('Failed to clear cache: $e');
+      showToast('Failed to clear cache: $e', isError: true);
     }
   }
 
@@ -1238,11 +1369,15 @@ class AppController extends ChangeNotifier {
 
   void backupIndex(String password) {
     if (password.isEmpty) return;
+    lastBackupAt = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    _saveConfig();
     if (demoMode || !hasNativeCore) {
       showToast(strings.demoBackupToast);
+      notifyListeners();
       return;
     }
     _bridge.sendCommand({'type': 'backup_index', 'password': password});
+    notifyListeners();
   }
 
   void restoreIndex(String password, int? messageId) {

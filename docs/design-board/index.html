@@ -1,0 +1,1492 @@
+<!doctype html>
+<html lang="ar" dir="ltr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BIG DUCK — Obsidian & Ivory Signal Vault Design System</title>
+  <style>
+    @font-face {
+      font-family: "IBMPlexSans";
+      src: url("../../assets/fonts/IBMPlexSans-Regular.ttf") format("truetype");
+      font-weight: 400;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "IBMPlexSans";
+      src: url("../../assets/fonts/IBMPlexSans-SemiBold.ttf") format("truetype");
+      font-weight: 600;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "IBMPlexSans";
+      src: url("../../assets/fonts/IBMPlexSans-Bold.ttf") format("truetype");
+      font-weight: 700;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "IBMPlexSansArabic";
+      src: url("../../assets/fonts/IBMPlexSansArabic-Regular.ttf") format("truetype");
+      font-weight: 400;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "IBMPlexSansArabic";
+      src: url("../../assets/fonts/IBMPlexSansArabic-SemiBold.ttf") format("truetype");
+      font-weight: 600;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "IBMPlexSansArabic";
+      src: url("../../assets/fonts/IBMPlexSansArabic-Bold.ttf") format("truetype");
+      font-weight: 700;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "IBMPlexMono";
+      src: url("../../assets/fonts/IBMPlexMono-Regular.ttf") format("truetype");
+      font-weight: 400 700;
+      font-style: normal;
+      font-display: swap;
+    }
+
+    :root {
+      --studio-bg: #0b0b0d;
+      --studio-panel: rgba(120, 124, 135, 0.12);
+      --studio-border: rgba(255, 255, 255, 0.1);
+      --studio-ink: #f4f4f6;
+      --studio-sec: #9a9ca6;
+      --studio-champagne: #d9d6cf;
+      --studio-green: #4ade80;
+      --studio-coral: #f87171;
+      --studio-amber: #c9b27c;
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: radial-gradient(circle at 50% 0%, #14151a 0%, #050506 60%);
+      color: var(--studio-ink);
+      font-family: "IBMPlexSans", "IBMPlexSansArabic", -apple-system, BlinkMacSystemFont, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .mono {
+      font-family: "IBMPlexMono", "IBMPlexSansArabic", monospace;
+      letter-spacing: 0.08em;
+    }
+    [dir="rtl"] .mono, .ar-mono {
+      letter-spacing: 0 !important;
+      font-family: "IBMPlexMono", "IBMPlexSansArabic", monospace;
+    }
+
+    /* Sticky Top Studio Bar */
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      backdrop-filter: blur(28px);
+      -webkit-backdrop-filter: blur(28px);
+      background: rgba(5, 5, 6, 0.82);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+      padding: 12px 24px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .brand img {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+    }
+    .brand-title { font-weight: 700; font-size: 14px; letter-spacing: -0.02em; }
+    .brand-sub { font-size: 11px; color: var(--studio-sec); }
+
+    .nav-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .nav-link {
+      font-size: 11.5px;
+      color: var(--studio-sec);
+      text-decoration: none;
+      padding: 6px 11px;
+      border-radius: 999px;
+      border: 1px solid transparent;
+      transition: all 250ms ease-out;
+    }
+    .nav-link:hover {
+      color: var(--studio-ink);
+      background: rgba(255, 255, 255, 0.06);
+      border-color: rgba(255, 255, 255, 0.1);
+    }
+
+    .filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .seg-group {
+      display: inline-flex;
+      background: rgba(120, 124, 135, 0.14);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 999px;
+      padding: 3px;
+      gap: 2px;
+    }
+    .seg-btn {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--studio-sec);
+      font-family: inherit;
+      font-size: 11.5px;
+      padding: 5px 11px;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: all 200ms ease-out;
+    }
+    .seg-btn.active {
+      background: rgba(255, 255, 255, 0.12);
+      border-color: rgba(217, 214, 207, 0.35);
+      color: var(--studio-champagne);
+      font-weight: 600;
+    }
+
+    .wrap {
+      max-width: 1580px;
+      margin: 0 auto;
+      padding: 32px 24px 96px;
+    }
+
+    .section {
+      margin-bottom: 72px;
+      scroll-margin-top: 84px;
+    }
+    .section-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      padding-bottom: 16px;
+      margin-bottom: 24px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .section-kicker {
+      font-size: 11px;
+      color: var(--studio-champagne);
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+    .section-title {
+      margin: 0;
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .motion-note {
+      font-size: 11px;
+      color: var(--studio-sec);
+      background: rgba(120, 124, 135, 0.14);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 6px 12px;
+      border-radius: 999px;
+    }
+
+    /* Tokens & Component Matrix */
+    .token-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+    .studio-card {
+      background: rgba(120, 124, 135, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 26px;
+      padding: 20px;
+      backdrop-filter: blur(28px);
+    }
+    .studio-card h3 {
+      margin: 0 0 12px;
+      font-size: 12px;
+      color: var(--studio-sec);
+      text-transform: uppercase;
+    }
+    .ramp {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 4px;
+      margin-top: 8px;
+    }
+    .swatch {
+      height: 28px;
+      border-radius: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      cursor: pointer;
+      position: relative;
+    }
+    .swatch:hover::after {
+      content: attr(data-hex);
+      position: absolute;
+      bottom: 115%;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #1a1a1c;
+      color: #f4f4f6;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 6px;
+      white-space: nowrap;
+      z-index: 20;
+      font-family: "IBMPlexMono", monospace;
+    }
+
+    .comp-split {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+      gap: 20px;
+    }
+
+    /* Frame Grid (exact 393x852 iPhone 15 Pro artboards) */
+    .frames-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 28px;
+      align-items: flex-start;
+    }
+    .artboard {
+      width: 393px;
+      flex: 0 0 393px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .artboard.hidden { display: none; }
+    .artboard-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 11px;
+      color: var(--studio-sec);
+      padding: 0 4px;
+    }
+    .artboard-title {
+      color: var(--studio-ink);
+      font-weight: 600;
+      font-size: 12px;
+    }
+
+    /* Phone Frame Theme Variables */
+    .phone {
+      width: 393px;
+      height: 852px;
+      border-radius: 48px;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      border: 6px solid #1e1f24;
+      box-shadow: 0 32px 64px rgba(0, 0, 0, 0.6);
+      font-family: "IBMPlexSans", "IBMPlexSansArabic", sans-serif;
+    }
+    .phone.dark {
+      --bg: #050506;
+      --glow: #14151a;
+      --solid: #1a1a1c;
+      --glass: rgba(120, 124, 135, 0.14);
+      --glass-hi: rgba(120, 124, 135, 0.24);
+      --bd: rgba(255, 255, 255, 0.12);
+      --bd-tl: rgba(255, 255, 255, 0.24);
+      --ink: #f4f4f6;
+      --sec: #9a9ca6;
+      --muted: #62646e;
+      --champagne: #d9d6cf;
+      --champagne-soft: rgba(217, 214, 207, 0.16);
+      --cta-bg: #d9d6cf;
+      --cta-ink: #050506;
+      --inv-bg: #f4f4f6;
+      --inv-ink: #050506;
+      --green: #4ade80;
+      --green-soft: rgba(74, 222, 128, 0.14);
+      --green-ink: #050506;
+      --coral: #f87171;
+      --coral-soft: rgba(248, 113, 113, 0.14);
+      --amber: #c9b27c;
+      --amber-soft: rgba(201, 178, 124, 0.15);
+      --scrim: rgba(5, 5, 6, 0.78);
+      background: radial-gradient(circle at 50% 18%, var(--glow) 0%, var(--bg) 75%);
+      color: var(--ink);
+    }
+    .phone.light {
+      --bg: #f7f6f3;
+      --glow: #ffffff;
+      --solid: #ffffff;
+      --glass: rgba(255, 255, 255, 0.65);
+      --glass-hi: rgba(255, 255, 255, 0.88);
+      --bd: rgba(0, 0, 0, 0.06);
+      --bd-tl: rgba(255, 255, 255, 0.92);
+      --ink: #111114;
+      --sec: #5e606a;
+      --muted: #9a9ca6;
+      --champagne: #b89b5e;
+      --champagne-soft: rgba(184, 155, 94, 0.14);
+      --cta-bg: #17181c;
+      --cta-ink: #f7f6f3;
+      --inv-bg: #d9d6cf;
+      --inv-ink: #111114;
+      --green: #16a34a;
+      --green-soft: rgba(22, 163, 74, 0.13);
+      --green-ink: #f7f6f3;
+      --coral: #dc2626;
+      --coral-soft: rgba(248, 113, 113, 0.14);
+      --amber: #8c6d32;
+      --amber-soft: rgba(201, 178, 124, 0.2);
+      --scrim: rgba(247, 246, 243, 0.86);
+      background: linear-gradient(180deg, #ffffff 0%, #f7f6f3 55%, #eeece6 100%);
+      color: var(--ink);
+      border-color: #d6d3cb;
+    }
+
+    /* Status bar + Dynamic Island */
+    .statusbar {
+      height: 50px;
+      padding: 14px 26px 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      font-weight: 600;
+      position: relative;
+      z-index: 5;
+      flex-shrink: 0;
+      direction: ltr;
+    }
+    .island {
+      position: absolute;
+      left: 50%;
+      top: 11px;
+      transform: translateX(-50%);
+      width: 114px;
+      height: 32px;
+      background: #000;
+      border-radius: 999px;
+    }
+    .phone-body {
+      flex: 1;
+      padding: 10px 20px 96px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Shared In-Frame Components */
+    .glass {
+      background: var(--glass);
+      backdrop-filter: blur(28px);
+      -webkit-backdrop-filter: blur(28px);
+      border: 1px solid var(--bd);
+      border-top-color: var(--bd-tl);
+      box-shadow: 0 24px 48px rgba(0, 0, 0, 0.24);
+    }
+    .phone.light .glass {
+      box-shadow: 0 20px 40px rgba(20, 20, 30, 0.08);
+    }
+    .card { border-radius: 26px; padding: 16px; }
+    .sm-card { border-radius: 22px; padding: 13px 14px; }
+    .tile-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 14px;
+      background: var(--glass-hi);
+      border: 1px solid var(--bd);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      color: var(--champagne);
+    }
+    .h1 { font-size: 32px; font-weight: 700; margin: 0; letter-spacing: -0.02em; line-height: 1.15; }
+    .h2 { font-size: 24px; font-weight: 700; margin: 0; line-height: 1.25; }
+    .h3 { font-size: 18px; font-weight: 600; margin: 0; line-height: 1.3; }
+    .body { font-size: 14px; line-height: 1.5; margin: 0; }
+    [dir="rtl"] .body { font-size: 15px; line-height: 1.6; }
+    .sec { color: var(--sec); }
+    .muted { color: var(--muted); }
+
+    .btn-pill {
+      height: 46px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 0 18px;
+      font-size: 14px;
+      font-weight: 600;
+      border: 1px solid transparent;
+      cursor: pointer;
+    }
+    .btn-primary { background: var(--cta-bg); color: var(--cta-ink); border-color: var(--cta-bg); }
+    .btn-secondary { background: var(--glass); color: var(--ink); border-color: var(--bd); }
+    .btn-inverted { background: var(--inv-bg); color: var(--inv-ink); }
+    .btn-outlined { background: transparent; color: var(--champagne); border-color: var(--champagne); font-size: 11.5px; }
+    .btn-coral { background: var(--coral-soft); color: var(--coral); border-color: rgba(248, 113, 113, 0.35); }
+    .btn-disabled { opacity: 0.42; }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 10.5px;
+      background: var(--glass);
+      border: 1px solid var(--bd);
+      color: var(--sec);
+      white-space: nowrap;
+    }
+    .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .dot-green { background: var(--green); }
+    .dot-champagne { background: var(--champagne); }
+    .dot-slate { background: var(--sec); }
+    .dot-coral { background: var(--coral); }
+
+    .searchbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-radius: 20px;
+      padding: 10px 14px;
+    }
+    .progress-track {
+      height: 4px;
+      width: 100%;
+      border-radius: 999px;
+      background: var(--bd);
+      overflow: hidden;
+      display: flex;
+    }
+    .progress-fill { height: 100%; border-radius: 999px; }
+
+    .seg-control {
+      display: flex;
+      padding: 4px;
+      border-radius: 999px;
+      gap: 4px;
+    }
+    .seg-tab {
+      flex: 1;
+      text-align: center;
+      padding: 7px 6px;
+      border-radius: 999px;
+      font-size: 12px;
+      color: var(--sec);
+    }
+    .seg-tab.active {
+      background: var(--glass-hi);
+      border: 1px solid rgba(217, 214, 207, 0.32);
+      color: var(--champagne);
+      font-weight: 600;
+    }
+    .phone.light .seg-tab.active { color: var(--ink); }
+
+    .toggle {
+      width: 46px;
+      height: 27px;
+      border-radius: 999px;
+      padding: 3px;
+      display: flex;
+      align-items: center;
+      background: var(--glass);
+      border: 1px solid var(--bd);
+    }
+    .toggle.on {
+      background: var(--champagne-soft);
+      border-color: var(--champagne);
+      justify-content: flex-end;
+    }
+    .toggle-knob {
+      width: 19px;
+      height: 19px;
+      border-radius: 50%;
+      background: var(--sec);
+    }
+    .toggle.on .toggle-knob { background: var(--champagne); }
+
+    /* Floating Bottom Nav (16px above bottom) */
+    .floating-nav {
+      position: absolute;
+      bottom: 16px;
+      left: 36px;
+      right: 36px;
+      height: 60px;
+      border-radius: 999px;
+      padding: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      z-index: 6;
+    }
+    .nav-btn {
+      width: 46px;
+      height: 46px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--sec);
+      position: relative;
+    }
+    .nav-btn.active {
+      background: var(--cta-bg);
+      color: var(--cta-ink);
+    }
+    .nav-badge {
+      position: absolute;
+      top: 4px;
+      inset-inline-end: 4px;
+      min-width: 15px;
+      height: 15px;
+      padding: 0 4px;
+      border-radius: 999px;
+      background: var(--green);
+      color: var(--green-ink);
+      font-size: 9px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1.5px solid var(--bg);
+    }
+
+    .stacked-wrap { position: relative; margin-top: 6px; }
+    .stacked-back {
+      position: absolute;
+      top: -5px;
+      left: 12px;
+      right: 12px;
+      height: 18px;
+      border-radius: 20px;
+      background: var(--glass);
+      border: 1px solid var(--bd);
+    }
+
+    @keyframes breathe {
+      0%, 100% {
+        box-shadow: 0 0 0 0 rgba(217, 214, 207, 0.12), 0 0 32px rgba(217, 214, 207, 0.14);
+        transform: scale(1);
+      }
+      50% {
+        box-shadow: 0 0 0 14px rgba(217, 214, 207, 0.04), 0 0 54px rgba(217, 214, 207, 0.28);
+        transform: scale(1.025);
+      }
+    }
+    .lock-orb {
+      width: 160px;
+      height: 160px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      animation: breathe 4s ease-in-out infinite;
+    }
+    .lock-orb.failed {
+      border-color: var(--coral) !important;
+      box-shadow: 0 0 42px rgba(248, 113, 113, 0.3);
+      animation: none;
+    }
+
+    @keyframes shimmer {
+      0%, 100% { opacity: 0.35; }
+      50% { opacity: 0.7; }
+    }
+    .skel {
+      background: var(--sec);
+      border-radius: 999px;
+      animation: shimmer 1.8s ease-in-out infinite;
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="../../assets/icon.png" alt="BIG DUCK" />
+      <div>
+        <div class="brand-title">BIG DUCK — Obsidian &amp; Ivory Signal Vault</div>
+        <div class="brand-sub mono">393×852 · IBM Plex + Liquid Glass · AR RTL Primary + EN LTR</div>
+      </div>
+    </div>
+
+    <nav class="nav-links">
+      <a class="nav-link" href="#sec-tokens">00 Tokens</a>
+      <a class="nav-link" href="#sec-auth">01 Auth</a>
+      <a class="nav-link" href="#sec-lock">02 Lock</a>
+      <a class="nav-link" href="#sec-files">03 Files</a>
+      <a class="nav-link" href="#sec-preview">04 Preview</a>
+      <a class="nav-link" href="#sec-transfers">05 Transfers</a>
+      <a class="nav-link" href="#sec-settings">06 Settings</a>
+      <a class="nav-link" href="#sec-supporting">07 Modals</a>
+    </nav>
+
+    <div class="filters">
+      <div class="seg-group" id="themeFilter">
+        <button class="seg-btn active" data-val="all">Dark + Light</button>
+        <button class="seg-btn" data-val="dark">Obsidian Dark</button>
+        <button class="seg-btn" data-val="light">Ivory Light</button>
+      </div>
+      <div class="seg-group" id="langFilter">
+        <button class="seg-btn active" data-val="all">AR + EN</button>
+        <button class="seg-btn" data-val="ar">AR RTL</button>
+        <button class="seg-btn" data-val="en">EN LTR</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <!-- 00 TOKENS & COMPONENTS -->
+    <section class="section" id="sec-tokens">
+      <div class="section-head">
+        <div>
+          <div class="section-kicker mono">00 · SINGLE SOURCE OF TRUTH</div>
+          <h2 class="section-title">Design Tokens, 12-Step Tonal Ramps &amp; Components</h2>
+        </div>
+        <span class="motion-note mono">Click any hex swatch to copy · 250ms ease-out · Radii 26 / 999 / 32 / 14</span>
+      </div>
+      <div class="token-grid" id="rampsContainer"></div>
+      <div class="comp-split" id="componentsShowcase"></div>
+    </section>
+
+    <!-- 01 AUTH -->
+    <section class="section" id="sec-auth">
+      <div class="section-head">
+        <div>
+          <div class="section-kicker mono">01 · CONNECT TELEGRAM (4 STEPS)</div>
+          <h2 class="section-title">Auth — Liquid-Glass Onboarding + 4-Segment Tape</h2>
+        </div>
+        <span class="motion-note mono">Progress tape transitions 250ms ease-out · Top AR/EN glass pill</span>
+      </div>
+      <div class="frames-row" id="authFrames"></div>
+    </section>
+
+    <!-- 02 LOCK -->
+    <section class="section" id="sec-lock">
+      <div class="section-head">
+        <div>
+          <div class="section-kicker mono">02 · BIOMETRIC VAULT GUARD</div>
+          <h2 class="section-title">Lock Screen — 160px Breathing Glass Orb &amp; Failed State</h2>
+        </div>
+        <span class="motion-note mono">4s breathing glow loop · Coral shake on failure</span>
+      </div>
+      <div class="frames-row" id="lockFrames"></div>
+    </section>
+
+    <!-- 03 FILES -->
+    <section class="section" id="sec-files">
+      <div class="section-head">
+        <div>
+          <div class="section-kicker mono">03 · VAULT BROWSER</div>
+          <h2 class="section-title">Files — List, Stacked Folders, Grid Thumbnails, Multi-Select, Search, Empty &amp; Skeleton</h2>
+        </div>
+        <span class="motion-note mono">Specular scroll sheen · WCAG AA glass scrims · RTL-mirrored breadcrumbs &amp; dock</span>
+      </div>
+      <div class="frames-row" id="filesFrames"></div>
+    </section>
+
+    <!-- 04 PREVIEW -->
+    <section class="section" id="sec-preview">
+      <div class="section-head">
+        <div>
+          <div class="section-kicker mono">04 · ALWAYS OBSIDIAN DARKROOM (#050506)</div>
+          <h2 class="section-title">Preview — Image, PDF, Video, Audio Waveform, Info Sheet &amp; Decrypting</h2>
+        </div>
+        <span class="motion-note mono">Deep black #050506 preserved in both themes · Top champagne decrypt bar</span>
+      </div>
+      <div class="frames-row" id="previewFrames"></div>
+    </section>
+
+    <!-- 05 TRANSFERS -->
+    <section class="section" id="sec-transfers">
+      <div class="section-head">
+        <div>
+          <div class="section-kicker mono">05 · LIVE ENCRYPTED QUEUE</div>
+          <h2 class="section-title">Transfers — Chunk Tapes, Pause/Resume, Failed Retry &amp; FLOOD_WAIT</h2>
+        </div>
+        <span class="motion-note mono">Champagne running · Slate paused/queued · Green complete · #C9B27C FloodWait</span>
+      </div>
+      <div class="frames-row" id="transfersFrames"></div>
+    </section>
+
+    <!-- 06 SETTINGS -->
+    <section class="section" id="sec-settings">
+      <div class="section-head">
+        <div>
+          <div class="section-kicker mono">06 · VAULT PREFERENCES</div>
+          <h2 class="section-title">Settings, Owned/Admin Destination Sheet &amp; Logout Confirmation</h2>
+        </div>
+        <span class="motion-note mono">Mono section labels +8% tracking · Miniature Light/Dark/Auto previews</span>
+      </div>
+      <div class="frames-row" id="settingsFrames"></div>
+    </section>
+
+    <!-- 07 SUPPORTING STATES -->
+    <section class="section" id="sec-supporting">
+      <div class="section-head">
+        <div>
+          <div class="section-kicker mono">07 · SHEETS, DIALOGS, SHARE RECEIVER &amp; ANDROID NOTIFICATIONS</div>
+          <h2 class="section-title">Supporting States</h2>
+        </div>
+        <span class="motion-note mono">32px bottom sheets · 26px glass dialogs · 999 pill toasts</span>
+      </div>
+      <div class="frames-row" id="supportingFrames"></div>
+    </section>
+  </main>
+
+  <script>
+    // Thin 1.5px SVG icon helper
+    const svg = (path, size = 18) =>
+      `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`;
+
+    const ICONS = {
+      folder: svg('<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>'),
+      swap: svg('<path d="M7 4v16m0-16l-3 3m3-3l3 3M17 20V4m0 16l-3-3m3 3l3-3"/>'),
+      clock: svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
+      sliders: svg('<path d="M4 21v-7m0-4V3m8 18v-9m0-4V3m8 18v-5m0-4V3M1 14h6m2-6h6m2 8h6"/>'),
+      search: svg('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>', 16),
+      filter: svg('<path d="M3 6h18M7 12h10m-7 6h4"/>', 16),
+      lock: svg('<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>', 13),
+      check: svg('<path d="M5 13l4 4L19 7"/>', 16),
+      pdf: svg('<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>'),
+      img: svg('<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m21 15-5-5L5 21"/>'),
+      pause: svg('<path d="M9 5v14M15 5v14"/>', 16),
+      play: svg('<path d="M7 4l12 8-12 8z"/>', 16),
+      up: svg('<path d="M12 19V5m0 0-5 5m5-5 5 5"/>', 16),
+      down: svg('<path d="M12 5v14m0 0-5-5m5 5 5-5"/>', 16),
+      back: svg('<path d="M19 12H5m0 0 6 6m-6-6 6-6"/>', 17),
+      grid: svg('<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>', 16),
+      list: svg('<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>', 16),
+      plus: svg('<path d="M12 5v14M5 12h14"/>', 22),
+      trash: svg('<path d="M3 6h18M8 6V4h8v2m-1 0v14H9V6"/>', 16),
+      share: svg('<path d="M4 12v7a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7M12 3v12m0-12 4 4m-4-4-4 4"/>', 16),
+      info: svg('<circle cx="12" cy="12" r="9"/><path d="M12 16v-4m0-4h.01"/>', 16),
+      fingerprint: svg('<path d="M12 11v4m-4-2v2a4 4 0 0 0 8 0v-2a4 4 0 0 0-8 0zm-4-1a8 8 0 0 1 16 0v2M2 12a10 10 0 0 1 20 0"/>', 54),
+      chevR: svg('<path d="M9 6l6 6-6 6"/>', 14),
+      chevL: svg('<path d="M15 6l-6 6 6 6"/>', 14),
+    };
+
+    // 1. Render 12-Step Tonal Ramps
+    const RAMPS = [
+      { name: "Primary · Champagne #D9D6CF", steps: ["#141311","#23221F","#35342F","#4B4943","#65635B","#827F76","#A29E94","#BFBBB1","#D9D6CF","#E6E4DF","#F2F0EC","#FAF9F7"] },
+      { name: "Secondary · Slate #9A9CA6", steps: ["#101114","#1B1C21","#2A2C33","#3D404A","#525561","#6A6D7B","#828593","#9A9CA6","#B3B5BE","#CBCDD4","#E2E3E8","#F4F5F7"] },
+      { name: "Tertiary · Signal Green #4ADE80 (Functional Only)", steps: ["#051C0E","#0A3119","#0F4B27","#146937","#168544","#16A34A","#24C35F","#4ADE80","#78E8A0","#A6F1C0","#D0F8DF","#ECFDF3"] },
+      { name: "Neutral · Obsidian & Ivory #050506 -> #F7F6F3", steps: ["#050506","#0D0D10","#14151A","#1A1A1C","#28292F","#41424A","#62646E","#8A8C96","#B8B8BF","#DDDAD4","#EEECE6","#F7F6F3"] },
+      { name: "Destructive · Soft Coral #F87171 (Errors & Delete)", steps: ["#1E0A0A","#381111","#591919","#7E2222","#A92B2B","#DC2626","#EA4F4F","#F87171","#FA9595","#FCB9B9","#FEDADA","#FEF0F0"] },
+      { name: "Warning · FLOOD_WAIT #C9B27C", steps: ["#1A150B","#2D2513","#45391D","#604F29","#7E6837","#9D8247","#B69B5E","#C9B27C","#D8C59B","#E5D7B8","#F1E8D6","#FAF5EC"] },
+    ];
+
+    const rampsEl = document.getElementById("rampsContainer");
+    rampsEl.innerHTML = RAMPS.map(r => `
+      <div class="studio-card">
+        <h3 class="mono">${r.name}</h3>
+        <div class="ramp">
+          ${r.steps.map(hex => `<div class="swatch" style="background:${hex}" data-hex="${hex}" onclick="navigator.clipboard?.writeText('${hex}')"></div>`).join("")}
+        </div>
+      </div>
+    `).join("");
+
+    // 2. Render Reusable Components Showcase in Both Themes
+    const compHTML = (theme) => {
+      const isDark = theme === "dark";
+      return `
+        <div class="phone ${theme}" style="width:100%; height:auto; min-height:540px; border-radius:30px; padding:22px; gap:14px;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <span class="mono" style="font-size:11px; color:var(--sec);">COMPONENTS · ${isDark ? "OBSIDIAN LUXURY" : "IVORY LUXURY"}</span>
+            <span class="chip mono"><span class="dot dot-green"></span>SYNCED</span>
+          </div>
+
+          <div style="display:flex; flex-wrap:wrap; gap:8px;">
+            <span class="btn-pill btn-primary">Primary CTA</span>
+            <span class="btn-pill btn-secondary">Secondary</span>
+            <span class="btn-pill btn-inverted">Inverted</span>
+            <span class="btn-pill btn-outlined mono">OUTLINED</span>
+            <span class="btn-pill btn-primary btn-disabled">Disabled</span>
+            <span class="btn-pill btn-primary" style="opacity:0.9;">● Connecting...</span>
+          </div>
+
+          <div class="glass searchbar">
+            ${ICONS.search}
+            <span class="mono" style="font-size:11.5px; color:var(--sec);">SEARCH ENCRYPTED VAULT...</span>
+          </div>
+
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <div class="progress-track"><div class="progress-fill" style="width:62%; background:var(--champagne);"></div></div>
+            <div class="progress-track"><div class="progress-fill" style="width:38%; background:var(--sec);"></div></div>
+            <div class="progress-track"><div class="progress-fill" style="width:100%; background:var(--green);"></div></div>
+          </div>
+
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+            <div style="display:flex; gap:8px; align-items:center;">
+              <div style="width:36px;height:36px;border-radius:50%;background:var(--champagne-soft);color:var(--champagne);display:flex;align-items:center;justify-content:center;">${ICONS.info}</div>
+              <div style="width:36px;height:36px;border-radius:50%;background:var(--glass);color:var(--sec);border:1px solid var(--bd);display:flex;align-items:center;justify-content:center;">${ICONS.folder}</div>
+              <div style="width:36px;height:36px;border-radius:50%;background:var(--green-soft);color:var(--green);display:flex;align-items:center;justify-content:center;">${ICONS.share}</div>
+              <div style="width:36px;height:36px;border-radius:50%;background:var(--coral-soft);color:var(--coral);display:flex;align-items:center;justify-content:center;">${ICONS.trash}</div>
+              <div style="width:36px;height:36px;border-radius:14px;background:var(--green);color:var(--green-ink);display:flex;align-items:center;justify-content:center;">${ICONS.check}</div>
+            </div>
+            <div class="toggle on"><div class="toggle-knob"></div></div>
+          </div>
+
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            <span class="chip mono"><span class="dot dot-green"></span>OWNER</span>
+            <span class="chip mono">CHANNEL</span>
+            <span class="chip mono" style="color:var(--amber);background:var(--amber-soft);border-color:var(--amber);">FLOOD_WAIT 24s</span>
+            <span class="chip mono" style="color:var(--coral);background:var(--coral-soft);">DELETE</span>
+          </div>
+
+          <div class="glass seg-control">
+            <div class="seg-tab active">Active</div>
+            <div class="seg-tab">Completed</div>
+            <div class="seg-tab">Failed</div>
+          </div>
+
+          <!-- Nav Sample -->
+          <div class="glass" style="border-radius:999px;padding:6px 10px;display:flex;justify-content:space-between;align-items:center;" dir="rtl">
+            <div class="nav-btn active">${ICONS.folder}</div>
+            <div class="nav-btn">${ICONS.swap}<span class="nav-badge mono">2</span></div>
+            <div class="nav-btn">${ICONS.clock}</div>
+            <div class="nav-btn">${ICONS.sliders}</div>
+          </div>
+        </div>
+      `;
+    };
+    document.getElementById("componentsShowcase").innerHTML = compHTML("dark") + compHTML("light");
+
+    // Helper wrapping 393x852 Artboards
+    function renderArtboard(targetId, { title, theme, lang, bodyHtml, navTab = null, badge = 2 }) {
+      const dir = lang === "ar" ? "rtl" : "ltr";
+      const navOrder = [
+        { key: "files", icon: ICONS.folder, b: 0 },
+        { key: "transfers", icon: ICONS.swap, b: badge },
+        { key: "recent", icon: ICONS.clock, b: 0 },
+        { key: "settings", icon: ICONS.sliders, b: 0 },
+      ];
+      const navHtml = navTab ? `
+        <div class="glass floating-nav" dir="${dir}">
+          ${navOrder.map(it => `
+            <div class="nav-btn ${it.key === navTab ? "active" : ""}">
+              ${it.icon}
+              ${it.b > 0 ? `<span class="nav-badge mono">${it.b}</span>` : ""}
+            </div>
+          `).join("")}
+        </div>` : "";
+
+      const el = document.createElement("div");
+      el.className = "artboard";
+      el.dataset.theme = theme;
+      el.dataset.lang = lang;
+      el.innerHTML = `
+        <div class="artboard-meta mono">
+          <span class="artboard-title">${title}</span>
+          <span>393×852 · ${dir.toUpperCase()}</span>
+        </div>
+        <div class="phone ${theme}" dir="${dir}">
+          <div class="statusbar mono">
+            <span>9:41</span>
+            <div class="island"></div>
+            <span>5G · AES</span>
+          </div>
+          <div class="phone-body">${bodyHtml}</div>
+          ${navHtml}
+        </div>
+      `;
+      document.getElementById(targetId).appendChild(el);
+    }
+
+    // --- 01 AUTH SCREENS ---
+    function authBody(step, lang) {
+      const ar = lang === "ar";
+      const tape = [0, 1, 2, 3].map(i => {
+        const bg = i < step - 1 ? "var(--green)" : (i === step - 1 ? "var(--champagne)" : "var(--bd)");
+        return `<div style="flex:1;height:3.5px;border-radius:999px;background:${bg};"></div>`;
+      }).join("");
+
+      const titles = ar
+        ? ["ربط تيليجرام", "رقم الهاتف", "رمز التحقق", "التحقق بخطوتين (2FA)"]
+        : ["Connect Telegram", "Phone number", "Verification code", "2FA password"];
+
+      let fields = "";
+      if (step === 1) {
+        fields = `
+          <div style="display:flex;flex-direction:column;gap:10px;">
+            <div>
+              <div class="mono sec" style="font-size:10.5px;margin-bottom:4px;">API ID</div>
+              <div class="glass" style="border-radius:14px;padding:12px 14px;font-size:13px;" dir="ltr">24819042</div>
+            </div>
+            <div>
+              <div class="mono sec" style="font-size:10.5px;margin-bottom:4px;">API HASH</div>
+              <div class="glass" style="border-radius:14px;padding:12px 14px;font-size:12px;" dir="ltr">9f2b8a4e31d70c...b410</div>
+            </div>
+            <div style="text-align:center;font-size:12px;color:var(--champagne);">${ar ? "احصل عليها من my.telegram.org" : "Get them from my.telegram.org"}</div>
+          </div>`;
+      } else if (step === 2) {
+        fields = `
+          <div style="display:flex;gap:8px;align-items:center;">
+            <div class="glass mono" style="border-radius:14px;padding:13px 12px;font-size:12.5px;" dir="ltr">+20 ▾</div>
+            <div class="glass mono" style="flex:1;border-radius:14px;padding:13px 14px;font-size:13px;" dir="ltr">100 421 8910</div>
+          </div>`;
+      } else if (step === 3) {
+        fields = `
+          <div style="display:flex;gap:6px;justify-content:center;" dir="ltr">
+            ${["4","8","2","9","1",""].map((d,i) => `<div class="glass mono" style="width:42px;height:48px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:17px;border-color:${i===5?"var(--champagne)":"var(--bd)"};">${d}</div>`).join("")}
+          </div>
+          <div class="mono sec" style="text-align:center;font-size:11px;margin-top:10px;">${ar ? "إعادة الإرسال 00:45" : "RESEND IN 00:45"}</div>`;
+      } else {
+        fields = `
+          <div class="glass" style="border-radius:14px;padding:13px 14px;display:flex;justify-content:space-between;align-items:center;">
+            <span class="mono">••••••••••••</span>
+            <span class="mono sec" style="font-size:11px;">SHOW</span>
+          </div>`;
+      }
+
+      return `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:28px;">
+          <span class="chip mono">${ar ? "معاينة الواجهة" : "PREVIEW UI"}</span>
+          <span class="chip mono"><strong style="color:var(--champagne);">${ar ? "AR" : "EN"}</strong> / ${ar ? "EN" : "AR"}</span>
+        </div>
+        <div style="flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;position:relative;">
+          <div style="width:100%;position:relative;">
+            <div style="width:66px;height:66px;border-radius:18px;overflow:hidden;position:absolute;top:-33px;left:50%;transform:translateX(-50%);z-index:4;box-shadow:0 0 32px rgba(217,214,207,0.28);border:1px solid var(--bd-tl);">
+              <img src="../../assets/icon.png" style="width:100%;height:100%;object-fit:cover;" />
+            </div>
+            <div class="glass card" style="padding-top:48px;padding-bottom:24px;display:flex;flex-direction:column;gap:16px;">
+              <div style="display:flex;gap:6px;">${tape}</div>
+              <div style="text-align:center;">
+                <h2 class="h2">${titles[step - 1]}</h2>
+                <p class="body sec" style="font-size:12.5px;margin-top:4px;">${ar ? "تشفر الملفات محلياً بـ AES-256-GCM" : "Zero-knowledge encrypted cloud storage"}</p>
+              </div>
+              ${fields}
+              <div class="btn-pill btn-primary" style="width:100%;margin-top:4px;">${ar ? "التالي" : "Continue"}</div>
+              <div style="text-align:center;font-size:12px;color:var(--sec);">${step > 1 ? (ar ? "تغيير الرقم أو بيانات API" : "Change phone or API keys") : (ar ? "استخدم معاينة الواجهة" : "Explore Preview UI")}</div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;margin-top:20px;color:var(--muted);font-size:11.5px;">
+            ${ICONS.lock}
+            <span>${ar ? "التشفير يتم على جهازك قبل ما أي شيء يغادره" : "Encrypted on your device before anything leaves it"}</span>
+          </div>
+        </div>
+      `;
+    }
+
+    renderArtboard("authFrames", { title: "Auth Step 1 / Dark / AR", theme: "dark", lang: "ar", bodyHtml: authBody(1, "ar") });
+    renderArtboard("authFrames", { title: "Auth Step 1 / Light / AR", theme: "light", lang: "ar", bodyHtml: authBody(1, "ar") });
+    renderArtboard("authFrames", { title: "Auth Step 1 / Dark / EN", theme: "dark", lang: "en", bodyHtml: authBody(1, "en") });
+    renderArtboard("authFrames", { title: "Auth Step 2 (Phone) / Dark / AR", theme: "dark", lang: "ar", bodyHtml: authBody(2, "ar") });
+    renderArtboard("authFrames", { title: "Auth Step 3 (Code) / Dark / AR", theme: "dark", lang: "ar", bodyHtml: authBody(3, "ar") });
+    renderArtboard("authFrames", { title: "Auth Step 4 (2FA) / Light / AR", theme: "light", lang: "ar", bodyHtml: authBody(4, "ar") });
+
+    // --- 02 LOCK SCREEN ---
+    function lockBody(lang, failed = false) {
+      const ar = lang === "ar";
+      return `
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:24px 0 42px;">
+          <div class="mono sec" style="font-size:12px;letter-spacing:0.22em;">BIG DUCK</div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:22px;">
+            <div class="glass lock-orb ${failed ? "failed" : ""}" style="color:${failed ? "var(--coral)" : "var(--champagne)"};">
+              ${ICONS.fingerprint}
+            </div>
+            <div style="text-align:center;">
+              <h2 class="h3">${ar ? "افتح خزنتك" : "Unlock your vault"}</h2>
+              <p class="body" style="font-size:13px;margin-top:6px;color:${failed ? "var(--coral)" : "var(--sec)"};">
+                ${failed ? (ar ? "حاول مرة أخرى" : "Try again") : (ar ? "أكّد هويتك لفك تشفير المفاتيح" : "Verify biometrics to unlock vault")}
+              </p>
+            </div>
+          </div>
+          <div class="sec" style="font-size:13.5px;font-weight:500;">${ar ? "استخدم رمز المرور" : "Use passcode"}</div>
+        </div>`;
+    }
+    renderArtboard("lockFrames", { title: "Lock / Dark / AR", theme: "dark", lang: "ar", bodyHtml: lockBody("ar", false) });
+    renderArtboard("lockFrames", { title: "Lock / Light / AR", theme: "light", lang: "ar", bodyHtml: lockBody("ar", false) });
+    renderArtboard("lockFrames", { title: "Lock Failed / Dark / AR", theme: "dark", lang: "ar", bodyHtml: lockBody("ar", true) });
+
+    // --- 03 FILES ---
+    function filesBody(lang, mode = "list") {
+      const ar = lang === "ar";
+      const headerTitle = mode === "multiselect" ? (ar ? "3 محددة" : "3 selected") : (ar ? "الخزنة" : "Vault");
+      const crumbs = `
+        <div style="display:flex;align-items:center;gap:6px;overflow:hidden;margin-top:10px;">
+          <span class="chip mono">${ar ? "ملفاتي" : "MY FILES"}</span>
+          <span class="sec">${ar ? ICONS.chevL : ICONS.chevR}</span>
+          <span class="chip mono" style="color:var(--champagne);border-color:var(--champagne);">Documents</span>
+        </div>`;
+
+      const row = (name, meta, icon, dot = "green", sel = false, checked = false, folderSub = "") => `
+        <div class="glass sm-card" style="display:flex;align-items:center;gap:12px;border-color:${checked ? "var(--champagne)" : "var(--bd)"};background:${checked ? "var(--champagne-soft)" : "var(--glass)"};">
+          ${sel ? `<div style="width:20px;height:20px;border-radius:50%;border:1.5px solid ${checked?"var(--champagne)":"var(--sec)"};background:${checked?"var(--champagne)":"transparent"};display:flex;align-items:center;justify-content:center;color:var(--cta-ink);">${checked ? ICONS.check : ""}</div>` : ""}
+          <div class="tile-icon">${icon}</div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${name}</div>
+            ${folderSub ? `<div class="mono" style="font-size:10px;color:var(--champagne);">${folderSub}</div>` : ""}
+            <div class="mono sec" style="font-size:10.5px;">${meta}</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;color:var(--sec);">
+            ${ICONS.lock}
+            <span class="dot dot-${dot}"></span>
+          </div>
+        </div>`;
+
+      let content = "";
+      if (mode === "grid") {
+        content = `
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;">
+            <div class="glass" style="height:175px;border-radius:22px;position:relative;overflow:hidden;background:linear-gradient(135deg,#23242b,#111216);">
+              <img src="../../assets/icon.png" style="width:100%;height:100%;object-fit:cover;opacity:0.86;" />
+              <div style="position:absolute;inset:auto 0 0 0;background:var(--scrim);padding:10px;border-top:1px solid var(--bd);">
+                <div style="font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Studio_RAW_04.png</div>
+                <div class="mono sec" style="font-size:10px;">4.8 MB · PNG</div>
+              </div>
+            </div>
+            <div class="glass" style="height:175px;border-radius:22px;position:relative;overflow:hidden;background:#f7f6f3;">
+              <div style="padding:14px;color:#111114;font-size:10px;line-height:1.5;opacity:0.65;">
+                <strong>ENCRYPTED LEDGER</strong><br/>Argon2id + AES-256-GCM<br/>SHA-256 VERIFIED PAGE 01
+              </div>
+              <div style="position:absolute;inset:auto 0 0 0;background:var(--scrim);padding:10px;border-top:1px solid var(--bd);">
+                <div style="font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Passport_Scan.pdf</div>
+                <div class="mono sec" style="font-size:10px;">2.4 MB · PDF</div>
+              </div>
+            </div>
+          </div>`;
+      } else if (mode === "empty") {
+        content = `
+          <div class="glass card" style="margin-top:20px;padding:34px 20px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:12px;">
+            <svg width="58" height="58" viewBox="0 0 64 64" fill="none" stroke="var(--champagne)" stroke-width="1.5">
+              <rect x="8" y="8" width="48" height="48" rx="14"/>
+              <circle cx="32" cy="32" r="14" stroke="var(--bd-tl)"/>
+              <circle cx="32" cy="32" r="6"/>
+              <path d="M32 18v6m0 16v6m-14-14h6m16 0h6"/>
+            </svg>
+            <h3 class="h3">${ar ? "الخزنة فارغة" : "Your vault is empty"}</h3>
+            <p class="body sec" style="font-size:12.5px;">${ar ? "تُقسَّم ملفاتك وتُشفَّر على جهازك قبل أي رفع." : "Files are split and encrypted locally before upload."}</p>
+            <span class="btn-pill btn-primary" style="height:40px;font-size:13px;">+ ${ar ? "رفع ملف" : "Upload file"}</span>
+          </div>
+          <div style="margin-top:14px;display:flex;flex-direction:column;gap:8px;">
+            <div class="glass sm-card" style="display:flex;align-items:center;gap:12px;">
+              <div class="skel" style="width:40px;height:40px;border-radius:14px;"></div>
+              <div style="flex:1;display:flex;flex-direction:column;gap:8px;"><div class="skel" style="height:11px;width:65%;"></div><div class="skel" style="height:8px;width:36%;"></div></div>
+            </div>
+          </div>`;
+      } else if (mode === "search") {
+        content = `
+          <div class="mono sec" style="font-size:10.5px;margin-top:14px;margin-bottom:8px;">${ar ? "نتائج البحث (2)" : "SEARCH RESULTS (2)"}</div>
+          <div style="display:flex;flex-direction:column;gap:9px;">
+            ${row("Tax_Return_2026.pdf", "842 KB · Nov 16", ICONS.pdf, "green", false, false, "Documents / Tax")}
+            ${row("Contract_Signed.pdf", "1.9 MB · Nov 14", ICONS.pdf, "champagne", false, false, ar ? "ملفاتي" : "Vault root")}
+          </div>`;
+      } else {
+        const sel = mode === "multiselect";
+        content = `
+          <div style="display:flex;flex-direction:column;gap:10px;margin-top:12px;">
+            <div class="stacked-wrap">
+              <div class="stacked-back"></div>
+              <div class="glass sm-card" style="display:flex;align-items:center;gap:12px;">
+                ${sel ? `<div style="width:20px;height:20px;border-radius:50%;background:var(--champagne);display:flex;align-items:center;justify-content:center;color:var(--cta-ink);">${ICONS.check}</div>` : ""}
+                <div class="tile-icon">${ICONS.folder}</div>
+                <div style="flex:1;">
+                  <div style="font-size:14.5px;font-weight:600;">Documents</div>
+                  <div class="mono sec" style="font-size:11px;">${ar ? "12 عنصر" : "12 items"}</div>
+                </div>
+                <span class="sec">${ar ? ICONS.chevL : ICONS.chevR}</span>
+              </div>
+            </div>
+            ${row("Passport_Scan.pdf", "2.4 MB · Nov 16", ICONS.pdf, "green", sel, sel)}
+            ${row("Studio_Backup.zip", "148 MB · Nov 15", ICONS.folder, "champagne", sel, sel)}
+            ${row("Portrait_RAW.dng", "34.2 MB · Nov 12", ICONS.img, "slate", sel, false)}
+          </div>`;
+      }
+
+      const fabOrBulk = mode === "multiselect" ? `
+        <div class="glass" style="position:absolute;bottom:18px;left:20px;right:20px;border-radius:999px;padding:10px 14px;display:flex;justify-content:space-around;font-size:11px;font-weight:600;z-index:8;">
+          <span style="color:var(--champagne);">${ar ? "نقل" : "Move"}</span>
+          <span style="color:var(--champagne);">${ar ? "تسمية" : "Rename"}</span>
+          <span style="color:var(--champagne);">${ar ? "تنزيل" : "Download"}</span>
+          <span style="color:var(--coral);">${ar ? "حذف" : "Delete"}</span>
+        </div>` : `
+        <div style="position:absolute;bottom:92px;inset-inline-end:20px;width:52px;height:52px;border-radius:50%;background:var(--cta-bg);color:var(--cta-ink);display:flex;align-items:center;justify-content:center;box-shadow:0 16px 32px rgba(0,0,0,0.4);">
+          ${ICONS.plus}
+        </div>`;
+
+      return `
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <h1 class="h1">${headerTitle}</h1>
+          <div style="display:flex;gap:8px;">
+            <div class="glass" style="width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;">${ICONS.check}</div>
+            <div class="glass" style="width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;">${mode === "grid" ? ICONS.list : ICONS.grid}</div>
+          </div>
+        </div>
+        <div style="margin-top:8px;">
+          <span class="chip mono"><span class="dot dot-green"></span>BIG DUCK Archive <span style="padding:1px 6px;border-radius:999px;background:var(--glass-hi);font-size:9.5px;">${ar ? "مملوكة لي" : "Owned by me"}</span></span>
+        </div>
+        <div class="glass searchbar" style="margin-top:12px;justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:8px;color:var(--sec);">
+            ${ICONS.search}
+            <span class="mono" style="font-size:11px;">${mode === "search" ? "Tax" : (ar ? "ابحث في جميع المجلدات..." : "Search all vault folders...")}</span>
+          </div>
+          ${ICONS.filter}
+        </div>
+        ${crumbs}
+        ${content}
+        ${fabOrBulk}
+      `;
+    }
+
+    renderArtboard("filesFrames", { title: "Files / Dark / AR", theme: "dark", lang: "ar", bodyHtml: filesBody("ar", "list"), navTab: "files" });
+    renderArtboard("filesFrames", { title: "Files / Light / AR", theme: "light", lang: "ar", bodyHtml: filesBody("ar", "list"), navTab: "files" });
+    renderArtboard("filesFrames", { title: "Files / Dark / EN", theme: "dark", lang: "en", bodyHtml: filesBody("en", "list"), navTab: "files" });
+    renderArtboard("filesFrames", { title: "Files / Light / EN", theme: "light", lang: "en", bodyHtml: filesBody("en", "list"), navTab: "files" });
+    renderArtboard("filesFrames", { title: "Files Grid / Dark / AR", theme: "dark", lang: "ar", bodyHtml: filesBody("ar", "grid"), navTab: "files" });
+    renderArtboard("filesFrames", { title: "Files Multi-Select / Dark / AR", theme: "dark", lang: "ar", bodyHtml: filesBody("ar", "multiselect"), navTab: null });
+    renderArtboard("filesFrames", { title: "Files Search / Light / AR", theme: "light", lang: "ar", bodyHtml: filesBody("ar", "search"), navTab: "files" });
+    renderArtboard("filesFrames", { title: "Files Empty + Skeleton / Dark / AR", theme: "dark", lang: "ar", bodyHtml: filesBody("ar", "empty"), navTab: "files" });
+
+    // --- 04 PREVIEW DARKROOM (Always Deep #050506) ---
+    function previewBody(variant, lang) {
+      const ar = lang === "ar";
+      const topBar = `
+        <div class="glass" style="border-radius:999px;padding:7px 12px;display:flex;align-items:center;justify-content:space-between;">
+          <span>${ICONS.back}</span>
+          <div style="text-align:center;">
+            <div style="font-size:13px;font-weight:600;">${variant === "pdf" ? "Contract_Signed.pdf" : variant === "audio" ? "Voice_Note_08.m4a" : "Studio_RAW.jpg"}</div>
+            <div class="mono" style="font-size:10px;color:var(--green);">AES-256 · 4.2 MB</div>
+          </div>
+          <span>${ICONS.info}</span>
+        </div>`;
+
+      let middle = "";
+      if (variant === "image") {
+        middle = `
+          <div style="flex:1;display:flex;align-items:center;justify-content:center;">
+            <img src="../../assets/icon.png" style="width:100%;border-radius:16px;border:1px solid var(--bd);" />
+          </div>`;
+      } else if (variant === "pdf") {
+        middle = `
+          <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;">
+            <div style="width:88%;height:420px;background:#fff;color:#111;border-radius:14px;padding:24px;font-size:11px;line-height:1.6;">
+              <strong>SIGNAL VAULT VERIFIED DOCUMENT</strong><br/><br/>Zero-knowledge encrypted payload stored in chunked MTProto containers.<br/><br/>Integrity SHA-256 checked locally before rendering.
+            </div>
+            <span class="chip mono" style="background:rgba(5,5,6,0.85);color:#f4f4f6;">3 / 24</span>
+          </div>`;
+      } else if (variant === "audio") {
+        middle = `
+          <div style="flex:1;display:flex;align-items:center;justify-content:center;">
+            <div class="glass card" style="width:100%;text-align:center;">
+              <div class="tile-icon" style="width:64px;height:64px;margin:0 auto 14px;">${ICONS.play}</div>
+              <h3 class="h3">Voice_Note_08.m4a</h3>
+              <div class="mono" style="font-size:10.5px;color:var(--green);margin-top:4px;">AES-256-GCM DECRYPTED</div>
+              <div style="display:flex;align-items:center;justify-content:center;gap:4px;height:44px;margin:18px 0 10px;">
+                ${[12,26,18,36,24,40,30,16,32,20,14,28,38,18,12].map((h,i) => `<div style="width:4px;height:${h}px;border-radius:4px;background:${i<8?"var(--champagne)":"var(--bd)"};"></div>`).join("")}
+              </div>
+              <div class="mono sec" style="display:flex;justify-content:space-between;font-size:10.5px;"><span>01:14</span><span>03:42</span></div>
+            </div>
+          </div>`;
+      } else {
+        middle = `
+          <div style="margin-top:8px;">
+            <div class="progress-track" style="height:3px;"><div class="progress-fill" style="width:52%;background:var(--champagne);"></div></div>
+            <div class="mono" style="text-align:center;color:var(--champagne);font-size:11px;margin-top:8px;">${ar ? "جاري فك التشفير..." : "DECRYPTING..."}</div>
+          </div>
+          <div class="glass" style="margin-top:auto;border-radius:28px;padding:18px;display:flex;flex-direction:column;gap:10px;">
+            <div style="width:36px;height:4px;background:var(--sec);border-radius:999px;margin:0 auto 6px;opacity:0.4;"></div>
+            <div style="display:flex;justify-content:space-between;font-size:12.5px;"><span class="sec">${ar?"الحجم":"File size"}</span><span class="mono">4.2 MB</span></div>
+            <div style="display:flex;justify-content:space-between;font-size:12.5px;"><span class="sec">${ar?"الأجزاء":"Chunks"}</span><span class="mono">4</span></div>
+            <div style="display:flex;justify-content:space-between;font-size:12.5px;"><span class="sec">${ar?"التشفير":"Encryption"}</span><span class="mono" style="color:var(--green);">✓ AES-256-GCM</span></div>
+            <div class="glass" style="border-radius:14px;padding:10px;display:flex;justify-content:space-between;align-items:center;">
+              <div><div class="mono sec" style="font-size:10px;">SHA-256</div><div class="mono" style="font-size:11px;">8f434346648f…dc327aa4</div></div>
+              <span class="chip mono" style="color:var(--champagne);">${ar?"نسخ":"COPY"}</span>
+            </div>
+          </div>`;
+      }
+
+      const bottomBar = variant === "info" ? "" : `
+        <div class="glass" style="border-radius:999px;padding:8px 18px;display:flex;justify-content:space-around;">
+          <div style="width:36px;height:36px;border-radius:50%;background:var(--champagne-soft);color:var(--champagne);display:flex;align-items:center;justify-content:center;">${ICONS.info}</div>
+          <div style="width:36px;height:36px;border-radius:50%;background:var(--glass);color:var(--sec);display:flex;align-items:center;justify-content:center;">${ICONS.down}</div>
+          <div style="width:36px;height:36px;border-radius:50%;background:var(--green-soft);color:var(--green);display:flex;align-items:center;justify-content:center;">${ICONS.share}</div>
+          <div style="width:36px;height:36px;border-radius:50%;background:var(--coral-soft);color:var(--coral);display:flex;align-items:center;justify-content:center;">${ICONS.trash}</div>
+        </div>`;
+
+      return `<div style="flex:1;display:flex;flex-direction:column;justify-content:space-between;margin-bottom:-70px;">${topBar}${middle}${bottomBar}</div>`;
+    }
+
+    renderArtboard("previewFrames", { title: "Preview Image / Darkroom / AR", theme: "dark", lang: "ar", bodyHtml: previewBody("image", "ar") });
+    renderArtboard("previewFrames", { title: "Preview PDF / Darkroom / AR", theme: "dark", lang: "ar", bodyHtml: previewBody("pdf", "ar") });
+    renderArtboard("previewFrames", { title: "Preview Audio / Darkroom / AR", theme: "dark", lang: "ar", bodyHtml: previewBody("audio", "ar") });
+    renderArtboard("previewFrames", { title: "Preview Decrypt + Info Sheet / Darkroom / AR", theme: "dark", lang: "ar", bodyHtml: previewBody("info", "ar") });
+
+    // --- 05 TRANSFERS ---
+    function transfersBody(lang) {
+      const ar = lang === "ar";
+      const card = (name, dirIcon, pct, color, action, chunksDone, total, flood = false, err = "") => `
+        <div class="glass card" style="padding:14px 16px;display:flex;flex-direction:column;gap:10px;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <div class="tile-icon" style="color:${color};">${dirIcon}</div>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${name}</div>
+              <div class="mono sec" style="font-size:10.5px;">${pct}% · 4.2 MB/s · 14s</div>
+            </div>
+            ${action}
+          </div>
+          <div class="progress-track"><div class="progress-fill" style="width:${pct}%;background:${color};"></div></div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div style="flex:1;display:flex;gap:3px;">
+              ${Array.from({length: 8}, (_,i) => `<div style="flex:1;height:3.5px;border-radius:999px;background:${i < chunksDone ? color : "var(--bd)"};"></div>`).join("")}
+            </div>
+            <span class="mono sec" style="font-size:10px;">${ar ? `جزء ${chunksDone} من ${total}` : `chunk ${chunksDone} of ${total}`}</span>
+          </div>
+          ${flood ? `<div><span class="chip mono" style="color:var(--amber);background:var(--amber-soft);border-color:var(--amber);">${ar ? "طلب تيليجرام الانتظار 24ث" : "Telegram asked us to wait 24s"}</span></div>` : ""}
+          ${err ? `<div class="mono" style="font-size:10.5px;color:var(--coral);">${err}</div>` : ""}
+        </div>`;
+
+      return `
+        <h1 class="h1">${ar ? "التحويلات" : "Transfers"}</h1>
+        <div class="glass seg-control" style="margin-top:14px;">
+          <div class="seg-tab active">${ar ? "نشط (3)" : "Active (3)"}</div>
+          <div class="seg-tab">${ar ? "مكتمل" : "Completed"}</div>
+          <div class="seg-tab">${ar ? "فشل" : "Failed"}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;margin-top:14px;">
+          ${card("Archive_2026.zip", ICONS.up, 62, "var(--champagne)", `<div class="glass" style="width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;">${ICONS.pause}</div>`, 5, 8, true)}
+          ${card("Raw_Shoot_12.mov", ICONS.down, 38, "var(--sec)", `<div style="width:34px;height:34px;border-radius:50%;background:var(--champagne-soft);border:1px solid var(--champagne);color:var(--champagne);display:flex;align-items:center;justify-content:center;">${ICONS.play}</div>`, 3, 8)}
+          ${card("Backup_Index.tdrvbak", ICONS.up, 100, "var(--green)", `<div style="width:34px;height:34px;border-radius:50%;background:var(--green-soft);color:var(--green);display:flex;align-items:center;justify-content:center;">${ICONS.check}</div>`, 8, 8)}
+          ${card("Invoice_May.pdf", ICONS.down, 25, "var(--coral)", `<span class="btn-pill btn-coral" style="height:30px;padding:0 12px;font-size:11px;">${ar ? "إعادة المحاولة" : "Retry"}</span>`, 2, 8, false, "DC_MIGRATE · Socket reset")}
+        </div>`;
+    }
+
+    renderArtboard("transfersFrames", { title: "Transfers / Dark / AR", theme: "dark", lang: "ar", bodyHtml: transfersBody("ar"), navTab: "transfers", badge: 2 });
+    renderArtboard("transfersFrames", { title: "Transfers / Light / AR", theme: "light", lang: "ar", bodyHtml: transfersBody("ar"), navTab: "transfers", badge: 2 });
+    renderArtboard("transfersFrames", { title: "Transfers / Dark / EN", theme: "dark", lang: "en", bodyHtml: transfersBody("en"), navTab: "transfers", badge: 2 });
+    renderArtboard("transfersFrames", { title: "Transfers / Light / EN", theme: "light", lang: "en", bodyHtml: transfersBody("en"), navTab: "transfers", badge: 2 });
+
+    // --- 06 SETTINGS + DESTINATION SHEET ---
+    function settingsBody(lang) {
+      const ar = lang === "ar";
+      return `
+        <h1 class="h1">${ar ? "الإعدادات" : "Settings"}</h1>
+        <div class="mono sec" style="font-size:10.5px;margin:14px 4px 6px;">${ar ? "الحساب والأمان" : "ACCOUNT & SECURITY"}</div>
+        <div class="glass card" style="padding:14px;display:flex;flex-direction:column;gap:12px;">
+          <div style="display:flex;align-items:center;gap:12px;">
+            <div style="width:40px;height:40px;border-radius:50%;background:var(--champagne-soft);border:1px solid var(--champagne);color:var(--champagne);display:flex;align-items:center;justify-content:center;" class="mono">DK</div>
+            <div style="flex:1;">
+              <div style="font-size:14.5px;font-weight:600;">Duck Keeper</div>
+              <div class="mono sec" style="font-size:10.5px;"><span style="color:var(--green);">●</span> @duck_keeper</div>
+            </div>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--bd);padding-top:10px;">
+            <span style="font-size:13.5px;">${ar ? "القفل بالبصمة / Face ID" : "Biometric / Face ID lock"}</span>
+            <div class="toggle on"><div class="toggle-knob"></div></div>
+          </div>
+        </div>
+
+        <div class="mono sec" style="font-size:10.5px;margin:14px 4px 6px;">${ar ? "وجهة التخزين" : "STORAGE DESTINATION"}</div>
+        <div class="glass card" style="padding:14px;display:flex;align-items:center;justify-content:space-between;">
+          <div>
+            <div style="font-size:14px;font-weight:600;">BIG DUCK Archive</div>
+            <div class="mono sec" style="font-size:10.5px;">${ar ? "مجموعة · المالك" : "Group · Owner"}</div>
+          </div>
+          <span class="chip mono" style="color:var(--champagne);border-color:var(--champagne);">${ar ? "تغيير" : "Change"}</span>
+        </div>
+
+        <div class="mono sec" style="font-size:10.5px;margin:14px 4px 6px;">${ar ? "التشفير والحجم" : "ENCRYPTION"}</div>
+        <div class="glass card" style="padding:14px;display:flex;flex-direction:column;gap:10px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span class="mono" style="font-size:11.5px;">Argon2id + AES-256-GCM</span>
+            <span class="chip mono" style="color:var(--green);"><span class="dot dot-green"></span>ON</span>
+          </div>
+          <div class="glass seg-control">
+            <div class="seg-tab mono" style="font-size:10.5px;">64M</div>
+            <div class="seg-tab mono" style="font-size:10.5px;">256M</div>
+            <div class="seg-tab active mono" style="font-size:10.5px;">512M</div>
+            <div class="seg-tab mono" style="font-size:10.5px;">1G</div>
+          </div>
+        </div>
+
+        <div class="mono sec" style="font-size:10.5px;margin:14px 4px 6px;">${ar ? "المظهر واللغة" : "APPEARANCE & LANGUAGE"}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
+          <div class="glass" style="border-radius:16px;padding:8px;text-align:center;">
+            <div style="height:26px;border-radius:8px;background:#f7f6f3;margin-bottom:5px;border:1px solid rgba(0,0,0,0.08);"></div>
+            <span style="font-size:11px;">${ar ? "فاتح" : "Light"}</span>
+          </div>
+          <div class="glass" style="border-radius:16px;padding:8px;text-align:center;border-color:var(--champagne);background:var(--champagne-soft);">
+            <div style="height:26px;border-radius:8px;background:#050506;margin-bottom:5px;border:1px solid rgba(255,255,255,0.18);"></div>
+            <span style="font-size:11px;font-weight:600;">${ar ? "داكن" : "Dark"}</span>
+          </div>
+          <div class="glass" style="border-radius:16px;padding:8px;text-align:center;">
+            <div style="height:26px;border-radius:8px;background:linear-gradient(90deg,#f7f6f3 50%,#050506 50%);margin-bottom:5px;"></div>
+            <span style="font-size:11px;">${ar ? "تلقائي" : "Auto"}</span>
+          </div>
+        </div>
+
+        <div class="btn-pill btn-coral" style="width:100%;margin-top:14px;height:40px;font-size:13px;">${ar ? "تسجيل الخروج" : "Log out"}</div>
+      `;
+    }
+
+    function destSheetBody(lang) {
+      const ar = lang === "ar";
+      const chatRow = (init, title, kind, role, active = false) => `
+        <div class="glass sm-card" style="display:flex;align-items:center;gap:10px;border-color:${active?"var(--champagne)":"var(--bd)"};background:${active?"var(--champagne-soft)":"var(--glass)"};">
+          <div style="width:36px;height:36px;border-radius:50%;background:${active?"var(--cta-bg)":"var(--glass-hi)"};color:${active?"var(--cta-ink)":"var(--ink)"};display:flex;align-items:center;justify-content:center;" class="mono">${init}</div>
+          <div style="flex:1;">
+            <div style="font-size:13.5px;font-weight:600;">${title}</div>
+            <div style="display:flex;gap:5px;margin-top:4px;">
+              <span class="chip mono">${kind}</span>
+              <span class="chip mono"><span class="dot dot-green"></span>${role}</span>
+            </div>
+          </div>
+          ${active ? `<span style="color:var(--green);">${ICONS.check}</span>` : ""}
+        </div>`;
+      return `
+        <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;margin-bottom:-72px;">
+          <div class="glass" style="border-radius:32px;padding:18px;display:flex;flex-direction:column;gap:12px;">
+            <div style="width:38px;height:4px;background:var(--sec);opacity:0.4;border-radius:999px;margin:0 auto;"></div>
+            <h3 class="h3">${ar ? "وجهة التخزين" : "Storage destination"}</h3>
+            <div class="glass searchbar">${ICONS.search}<span class="mono sec" style="font-size:11px;">${ar ? "ابحث في المجموعات..." : "SEARCH OWNED CHATS..."}</span></div>
+            <div class="glass seg-control"><div class="seg-tab active">${ar ? "مملوكة لي (2)" : "Owned by me (2)"}</div><div class="seg-tab">${ar ? "مشرف (3)" : "Admin (3)"}</div></div>
+            ${chatRow("BD", "BIG DUCK Archive", ar ? "مجموعة" : "Group", ar ? "المالك" : "Owner", true)}
+            ${chatRow("PM", "Personal Media Vault", ar ? "قناة" : "Channel", ar ? "المالك" : "Owner", false)}
+            ${chatRow("SS", "Studio Admin Group", ar ? "مجموعة" : "Group", ar ? "مشرف" : "Admin", false)}
+            <div class="btn-pill btn-primary" style="width:100%;">+ ${ar ? "إنشاء مجموعة خزنة خاصة" : "Create private vault group"}</div>
+          </div>
+        </div>`;
+    }
+
+    renderArtboard("settingsFrames", { title: "Settings / Dark / AR", theme: "dark", lang: "ar", bodyHtml: settingsBody("ar"), navTab: "settings" });
+    renderArtboard("settingsFrames", { title: "Settings / Light / AR", theme: "light", lang: "ar", bodyHtml: settingsBody("ar"), navTab: "settings" });
+    renderArtboard("settingsFrames", { title: "Settings / Dark / EN", theme: "dark", lang: "en", bodyHtml: settingsBody("en"), navTab: "settings" });
+    renderArtboard("settingsFrames", { title: "Settings / Light / EN", theme: "light", lang: "en", bodyHtml: settingsBody("en"), navTab: "settings" });
+    renderArtboard("settingsFrames", { title: "Storage Destination Sheet / Dark / AR", theme: "dark", lang: "ar", bodyHtml: destSheetBody("ar") });
+    renderArtboard("settingsFrames", { title: "Storage Destination Sheet / Light / AR", theme: "light", lang: "ar", bodyHtml: destSheetBody("ar") });
+
+    // --- 07 SUPPORTING STATES ---
+    renderArtboard("supportingFrames", {
+      title: "Upload Sheet / Dark / AR",
+      theme: "dark",
+      lang: "ar",
+      bodyHtml: `
+        <div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;margin-bottom:-72px;">
+          <div class="glass" style="border-radius:32px;padding:20px;display:flex;flex-direction:column;gap:12px;">
+            <div style="width:38px;height:4px;background:var(--sec);opacity:0.4;border-radius:999px;margin:0 auto;"></div>
+            <h3 class="h3">رفع إلى الخزنة</h3>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+              <div class="glass sm-card"><strong>مستندات وملفات</strong><div class="sec" style="font-size:11px;margin-top:2px;">PDF أو مضغوط</div></div>
+              <div class="glass sm-card"><strong>صور وفيديو</strong><div class="sec" style="font-size:11px;margin-top:2px;">مكتبة الجهاز</div></div>
+            </div>
+            <div class="glass sm-card" style="display:flex;justify-content:space-between;align-items:center;">
+              <div><div class="mono sec" style="font-size:10px;">المجلد الوجهة</div><div style="font-size:13.5px;font-weight:600;">Documents</div></div>
+              <span>${ICONS.chevL}</span>
+            </div>
+            <div class="glass sm-card" style="display:flex;justify-content:space-between;align-items:center;">
+              <span style="font-size:13.5px;font-weight:500;">تشفير قبل الرفع</span>
+              <div class="toggle on"><div class="toggle-knob"></div></div>
+            </div>
+            <div class="btn-pill btn-primary" style="width:100%;">رفع</div>
+          </div>
+        </div>`
+    });
+
+    renderArtboard("supportingFrames", {
+      title: "Move Picker + Dialogs / Dark / AR",
+      theme: "dark",
+      lang: "ar",
+      bodyHtml: `
+        <div style="flex:1;display:flex;flex-direction:column;justify-content:space-between;margin-bottom:-60px;">
+          <div class="glass" style="border-radius:26px;padding:18px;display:flex;flex-direction:column;gap:12px;">
+            <h3 class="h3">تأكيد الحذف</h3>
+            <p class="body sec" style="font-size:12.5px;">سيتم حذف 3 عناصر من فهرس الخزنة نهائياً.</p>
+            <div style="display:flex;gap:8px;"><div class="btn-pill btn-secondary" style="flex:1;height:40px;">إلغاء</div><div class="btn-pill btn-coral" style="flex:1;height:40px;">حذف</div></div>
+          </div>
+          <div class="glass" style="border-radius:32px;padding:18px;display:flex;flex-direction:column;gap:8px;">
+            <h3 class="h3" style="margin-bottom:4px;">نقل إلى مجلد</h3>
+            <div class="glass sm-card" style="padding:10px 12px;">الخزنة الرئيسية</div>
+            <div class="glass sm-card" style="padding:10px 12px;margin-inline-start:14px;border-color:var(--champagne);background:var(--champagne-soft);">Documents ✓</div>
+            <div class="glass sm-card" style="padding:10px 12px;margin-inline-start:14px;">Photos &amp; RAW</div>
+            <div class="btn-pill btn-primary" style="width:100%;margin-top:6px;">انقل هنا</div>
+          </div>
+        </div>`
+    });
+
+    renderArtboard("supportingFrames", {
+      title: "Share Sheet (احفظ في الخزنة) / Light / AR",
+      theme: "light",
+      lang: "ar",
+      bodyHtml: `
+        <div style="flex:1;display:flex;flex-direction:column;justify-content:space-between;margin-bottom:-60px;">
+          <div style="display:flex;flex-direction:column;gap:10px;">
+            <div class="glass card" style="padding:14px;display:flex;flex-direction:column;gap:8px;">
+              <div style="display:flex;justify-content:space-between;font-size:12px;font-weight:600;">
+                <span>جاري التشفير والرفع (64%)</span><span class="chip mono">إيقاف</span>
+              </div>
+              <div class="mono sec" style="font-size:11px;">Passport_Scan.pdf</div>
+              <div class="progress-track"><div class="progress-fill" style="width:64%;background:var(--champagne);"></div></div>
+            </div>
+            <div class="glass" style="border-radius:999px;padding:9px 14px;display:inline-flex;align-items:center;gap:8px;align-self:center;font-size:12px;"><span class="dot dot-green"></span>تم حفظ الفهرس المشفر</div>
+            <div class="glass" style="border-radius:999px;padding:9px 14px;display:inline-flex;align-items:center;gap:8px;align-self:center;font-size:12px;"><span class="dot dot-coral"></span>تعذر الاتصال مؤقتاً</div>
+          </div>
+          <div class="glass" style="border-radius:32px;padding:18px;display:flex;flex-direction:column;gap:10px;">
+            <h3 class="h3">احفظ في الخزنة</h3>
+            <div class="glass sm-card" style="display:flex;align-items:center;gap:10px;">
+              <div class="tile-icon">${ICONS.pdf}</div>
+              <div><div style="font-size:13.5px;font-weight:600;">Contract_Signed.pdf</div><div class="mono sec" style="font-size:10.5px;">1.9 MB</div></div>
+            </div>
+            <div><span class="chip mono"><span class="dot dot-green"></span>BIG DUCK Archive</span></div>
+            <div class="glass sm-card" style="display:flex;justify-content:space-between;align-items:center;">
+              <span style="font-size:13px;">تشفير قبل الرفع</span><div class="toggle on"><div class="toggle-knob"></div></div>
+            </div>
+            <div class="btn-pill btn-primary" style="width:100%;">حفظ</div>
+          </div>
+        </div>`
+    });
+
+    // Global Filters (Theme + Language)
+    let activeTheme = "all";
+    let activeLang = "all";
+    function applyFilters() {
+      document.querySelectorAll(".artboard").forEach(ab => {
+        const matchTheme = activeTheme === "all" || ab.dataset.theme === activeTheme;
+        const matchLang = activeLang === "all" || ab.dataset.lang === activeLang;
+        ab.classList.toggle("hidden", !(matchTheme && matchLang));
+      });
+    }
+    document.getElementById("themeFilter").addEventListener("click", e => {
+      const btn = e.target.closest(".seg-btn");
+      if (!btn) return;
+      document.querySelectorAll("#themeFilter .seg-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      activeTheme = btn.dataset.val;
+      applyFilters();
+    });
+    document.getElementById("langFilter").addEventListener("click", e => {
+      const btn = e.target.closest(".seg-btn");
+      if (!btn) return;
+      document.querySelectorAll("#langFilter .seg-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      activeLang = btn.dataset.val;
+      applyFilters();
+    });
+  </script>
+</body>
+</html>

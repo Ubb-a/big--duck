@@ -1,16 +1,15 @@
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:material_ui/material_ui.dart';
 
-import '../l10n/app_strings.dart';
 import '../models/core_models.dart';
 import '../state/app_controller.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
-import '../widgets/app_icon.dart';
+import '../widgets/storage_destination_sheet.dart';
 import '../widgets/vault_surface.dart';
 import 'preview_screen.dart';
 
@@ -39,6 +38,7 @@ class FilesScreen extends StatefulWidget {
 class _FilesScreenState extends State<FilesScreen> {
   final _searchCtrl = TextEditingController();
   bool _gridMode = false;
+  bool _showFilters = false;
   _SortBy _sortBy = _SortBy.date;
   bool _sortAsc = false;
   _FileFilter _filter = _FileFilter.all;
@@ -98,96 +98,421 @@ class _FilesScreenState extends State<FilesScreen> {
     widget.controller.setSelecting(_selectionMode);
   }
 
-  Future<void> _pickDocuments() async {
+  Future<List<String>> _pickDocuments() async {
     final files = await FilePicker.pickFiles();
-    final paths = files.map((f) => f.path).whereType<String>().toList();
-    if (paths.isNotEmpty) {
-      widget.controller.uploadFiles(paths);
-    }
+    return files.map((f) => f.path).whereType<String>().toList();
   }
 
-  Future<void> _pickMedia() async {
+  Future<List<String>> _pickMedia() async {
     final picker = ImagePicker();
     final files = await picker.pickMultipleMedia();
-    if (files.isEmpty) return;
-    widget.controller.uploadFiles(files.map((x) => x.path).toList());
+    return files.map((x) => x.path).toList();
   }
 
-  void _showUploadSheet() {
+  void _showPlusActionMenu() {
     final p = widget.palette;
     final s = widget.controller.strings;
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => VaultSheetShell(
-        palette: p,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              s.encryptAndUpload,
-              style: VaultText.heading(p, s.ar, size: 17),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              s.uploadDesc,
-              style: VaultText.body(p, s.ar, size: 13, color: p.muted),
-            ),
-            const SizedBox(height: 16),
-            _SheetActionList(
-              palette: p,
-              isArabic: s.ar,
-              items: [
-                _SheetActionItem(
-                  icon: Icons.description_outlined,
-                  title: s.uploadDocs,
-                  subtitle: s.uploadDocsSub,
+      builder: (ctx) => Directionality(
+        textDirection: s.ar ? TextDirection.rtl : TextDirection.ltr,
+        child: VaultSheetShell(
+          palette: p,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _MenuGlassTile(
+                palette: p,
+                isArabic: s.ar,
+                icon: Icons.cloud_upload_outlined,
+                title: s.uploadFileAction,
+                subtitle: s.uploadDesc,
+                tone: p.champagne,
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showUploadBottomSheet();
+                },
+              ),
+              if (!widget.isRecent) ...[
+                const SizedBox(height: 10),
+                _MenuGlassTile(
+                  palette: p,
+                  isArabic: s.ar,
+                  icon: Icons.create_new_folder_outlined,
+                  title: s.newFolder,
+                  subtitle: s.folderNameHint,
+                  tone: p.secondary,
                   onTap: () {
                     Navigator.pop(ctx);
-                    _pickDocuments();
-                  },
-                ),
-                _SheetActionItem(
-                  icon: Icons.photo_library_outlined,
-                  title: s.uploadMedia,
-                  subtitle: s.uploadMediaSub,
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _pickMedia();
+                    _showNewFolderDialog();
                   },
                 ),
               ],
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
-  void _showNewFolderSheet() {
+  void _showUploadBottomSheet() {
     final p = widget.palette;
-    final s = widget.controller.strings;
+    final ctrl = widget.controller;
+    final s = ctrl.strings;
+    int? chosenFolderId = ctrl.snapshot.currentFolder?.id;
+    var encryptUpload = ctrl.encryptBeforeUpload;
+    var chosenPaths = <String>[];
+
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (ctx) => _PromptSheetForm(
-        palette: p,
-        isArabic: s.ar,
-        title: s.newFolder,
-        hintText: s.folderNameHint,
-        cancelLabel: s.cancel,
-        confirmLabel: s.create,
-        onSubmit: widget.controller.createFolder,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) {
+          final folderName = chosenFolderId == null
+              ? s.rootFolderLabel
+              : (ctrl.snapshot.allFolders
+                      .where((f) => f.id == chosenFolderId)
+                      .firstOrNull
+                      ?.name ??
+                  s.rootFolderLabel);
+          return Directionality(
+            textDirection: s.ar ? TextDirection.rtl : TextDirection.ltr,
+            child: VaultSheetShell(
+              palette: p,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    s.encryptAndUpload,
+                    style: VaultText.heading(p, s.ar, size: 20),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    s.uploadDesc,
+                    style:
+                        VaultText.body(p, s.ar, size: 13, color: p.secondary),
+                  ),
+                  const SizedBox(height: 16),
+
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _MenuGlassTile(
+                          palette: p,
+                          isArabic: s.ar,
+                          icon: Icons.description_outlined,
+                          title: s.uploadDocs,
+                          subtitle: s.uploadDocsSub,
+                          tone: p.champagne,
+                          onTap: () async {
+                            final paths = await _pickDocuments();
+                            if (paths.isNotEmpty) {
+                              setSheetState(() => chosenPaths = paths);
+                            }
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _MenuGlassTile(
+                          palette: p,
+                          isArabic: s.ar,
+                          icon: Icons.photo_library_outlined,
+                          title: s.uploadMedia,
+                          subtitle: s.uploadMediaSub,
+                          tone: p.champagne,
+                          onTap: () async {
+                            final paths = await _pickMedia();
+                            if (paths.isNotEmpty) {
+                              setSheetState(() => chosenPaths = paths);
+                            }
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  if (chosenPaths.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    VaultSurface(
+                      palette: p,
+                      borderRadius: VaultRadii.tile,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 10),
+                      child: Row(
+                        children: [
+                          Icon(Icons.check_circle_outline_rounded,
+                              size: 16, color: p.signalGreen),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              chosenPaths.length == 1
+                                  ? chosenPaths.first.split(RegExp(r'[/\\]')).last
+                                  : '${chosenPaths.length} ${s.ar ? "ملفات محددة" : "files selected"}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: VaultText.monoText(
+                                p,
+                                chosenPaths.first,
+                                size: 11.5,
+                                color: p.ink,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+
+                  const SizedBox(height: 12),
+                  VaultTap(
+                    onTap: () async {
+                      await _showMoveFolderPickerSheet(
+                        initialSelectedId: chosenFolderId,
+                        confirmLabel: s.save,
+                        onPickTarget: (picked) =>
+                            setSheetState(() => chosenFolderId = picked),
+                      );
+                    },
+                    child: VaultSurface(
+                      palette: p,
+                      borderRadius: VaultRadii.md,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 12),
+                      child: Row(
+                        children: [
+                          Icon(Icons.folder_outlined,
+                              size: 18, color: p.champagne),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  s.destinationFolderLabel,
+                                  style: VaultText.monoText(
+                                    p,
+                                    s.destinationFolderLabel,
+                                    size: 10.5,
+                                    color: p.secondary,
+                                  ),
+                                ),
+                                Text(
+                                  folderName,
+                                  style: VaultText.body(p, s.ar,
+                                      size: 14,
+                                      weight: FontWeight.w500,
+                                      applyArabicScale: false),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Icon(
+                            s.ar
+                                ? Icons.chevron_left_rounded
+                                : Icons.chevron_right_rounded,
+                            size: 20,
+                            color: p.secondary,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 10),
+                  VaultSurface(
+                    palette: p,
+                    borderRadius: VaultRadii.md,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.lock_outline_rounded,
+                          size: 18,
+                          color:
+                              encryptUpload ? p.signalGreen : p.secondary,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            s.encryptBeforeUpload,
+                            style: VaultText.body(p, s.ar,
+                                size: 14,
+                                weight: FontWeight.w500,
+                                applyArabicScale: false),
+                          ),
+                        ),
+                        VaultToggle(
+                          palette: p,
+                          value: encryptUpload,
+                          onChanged: (v) =>
+                              setSheetState(() => encryptUpload = v),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+                  VaultPillButton(
+                    palette: p,
+                    isArabic: s.ar,
+                    label: s.upload,
+                    icon: Icons.arrow_upward_rounded,
+                    onPressed: () async {
+                      List<String> toUpload = chosenPaths;
+                      if (toUpload.isEmpty) {
+                        toUpload = await _pickDocuments();
+                      }
+                      if (toUpload.isNotEmpty) {
+                        ctrl.setEncryptBeforeUpload(encryptUpload);
+                        ctrl.uploadFiles(
+                          toUpload,
+                          targetFolderId: chosenFolderId,
+                          encryptedOverride: encryptUpload,
+                        );
+                        if (ctx.mounted) Navigator.pop(ctx);
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }
 
-  void _showMoveTargetSheet({
-    List<int> excludedFolderIds = const [],
-    required ValueChanged<int?> onPickTarget,
+  void _showNewFolderDialog() {
+    final p = widget.palette;
+    final s = widget.controller.strings;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: s.ar ? TextDirection.rtl : TextDirection.ltr,
+        child: _PromptDialogForm(
+          palette: p,
+          isArabic: s.ar,
+          title: s.newFolder,
+          hintText: s.folderNameHint,
+          cancelLabel: s.cancel,
+          confirmLabel: s.create,
+          onSubmit: widget.controller.createFolder,
+        ),
+      ),
+    );
+  }
+
+  void _showRenameDialog({
+    required String title,
+    required String initial,
+    required ValueChanged<String> onSave,
   }) {
+    final p = widget.palette;
+    final s = widget.controller.strings;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: s.ar ? TextDirection.rtl : TextDirection.ltr,
+        child: _PromptDialogForm(
+          palette: p,
+          isArabic: s.ar,
+          title: title,
+          initialText: initial,
+          cancelLabel: s.cancel,
+          confirmLabel: s.save,
+          useSquareConfirm: true,
+          onSubmit: onSave,
+        ),
+      ),
+    );
+  }
+
+  void _showDeleteConfirmDialog({
+    required int count,
+    required VoidCallback onConfirm,
+  }) {
+    final p = widget.palette;
+    final s = widget.controller.strings;
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => Directionality(
+        textDirection: s.ar ? TextDirection.rtl : TextDirection.ltr,
+        child: VaultDialogShell(
+          palette: p,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  VaultQuickActionCircle(
+                    palette: p,
+                    tone: VaultQuickTone.coral,
+                    icon: Icons.delete_outline_rounded,
+                    onTap: null,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      s.deleteConfirmTitle,
+                      style: VaultText.heading(p, s.ar, size: 18),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                s.deleteConfirmDesc(count),
+                style: VaultText.body(p, s.ar, size: 13.5, color: p.secondary),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: VaultPillButton(
+                      palette: p,
+                      isArabic: s.ar,
+                      variant: VaultPillVariant.secondary,
+                      height: 44,
+                      label: s.cancel,
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: VaultPillButton(
+                      palette: p,
+                      isArabic: s.ar,
+                      variant: VaultPillVariant.danger,
+                      height: 44,
+                      label: s.deleteAction,
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        onConfirm();
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showMoveFolderPickerSheet({
+    List<int> excludedFolderIds = const [],
+    int? initialSelectedId,
+    String? confirmLabel,
+    required ValueChanged<int?> onPickTarget,
+  }) async {
     final p = widget.palette;
     final ctrl = widget.controller;
     final s = ctrl.strings;
@@ -198,52 +523,90 @@ class _FilesScreenState extends State<FilesScreen> {
       return true;
     }).toList();
 
-    showModalBottomSheet<void>(
+    final depthMap = _computeFolderDepths(validFolders);
+    int? selectedTarget = initialSelectedId ?? ctrl.snapshot.currentFolder?.id;
+
+    await showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (ctx) => VaultSheetShell(
-        palette: p,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxHeight: 400),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(s.moveToTitle, style: VaultText.heading(p, s.ar, size: 17)),
-              const SizedBox(height: 12),
-              Flexible(
-                child: SingleChildScrollView(
-                  child: _SheetActionList(
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => Directionality(
+          textDirection: s.ar ? TextDirection.rtl : TextDirection.ltr,
+          child: VaultSheetShell(
+            palette: p,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 460),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(s.moveToTitle,
+                      style: VaultText.heading(p, s.ar, size: 20)),
+                  const SizedBox(height: 12),
+                  Flexible(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        children: [
+                          _TreePickerRow(
+                            palette: p,
+                            isArabic: s.ar,
+                            icon: Icons.home_outlined,
+                            title: s.rootFolderLabel,
+                            depth: 0,
+                            selected: selectedTarget == null,
+                            onTap: () =>
+                                setSheetState(() => selectedTarget = null),
+                          ),
+                          for (final folder in validFolders)
+                            _TreePickerRow(
+                              palette: p,
+                              isArabic: s.ar,
+                              icon: Icons.folder_outlined,
+                              title: folder.name,
+                              depth: depthMap[folder.id] ?? 1,
+                              selected: selectedTarget == folder.id,
+                              onTap: () =>
+                                  setSheetState(() => selectedTarget = folder.id),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  VaultPillButton(
                     palette: p,
                     isArabic: s.ar,
-                    items: [
-                      _SheetActionItem(
-                        icon: Icons.home_outlined,
-                        title: s.rootFolderLabel,
-                        onTap: () {
-                          Navigator.pop(ctx);
-                          onPickTarget(null);
-                        },
-                      ),
-                      for (final folder in validFolders)
-                        _SheetActionItem(
-                          icon: Icons.folder_outlined,
-                          title: folder.name,
-                          onTap: () {
-                            Navigator.pop(ctx);
-                            onPickTarget(folder.id);
-                          },
-                        ),
-                    ],
+                    label: confirmLabel ?? s.moveHereCta,
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      onPickTarget(selectedTarget);
+                    },
                   ),
-                ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
     );
+  }
+
+  Map<int, int> _computeFolderDepths(List<Folder> folders) {
+    final byId = <int, Folder>{for (final f in folders) f.id: f};
+    final depths = <int, int>{};
+    for (final folder in folders) {
+      var d = 1;
+      var cursor = folder.parentId;
+      var guard = 0;
+      while (cursor != null && guard < 8) {
+        d++;
+        cursor = byId[cursor]?.parentId;
+        guard++;
+      }
+      depths[folder.id] = d;
+    }
+    return depths;
   }
 
   void _openPreview(FileRecord file) {
@@ -266,179 +629,207 @@ class _FilesScreenState extends State<FilesScreen> {
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (ctx) => VaultSheetShell(
-        palette: p,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Icon(iconForMimeOrName(file.mimeType, file.name),
-                    color: p.cobalt, size: 24),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        file.name,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: VaultText.heading(p, s.ar, size: 15.5),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '${formatBytes(file.size)}, ${file.isEncrypted ? "AES-256-GCM" : "Unencrypted"}',
-                        style: VaultText.tabular(p, s.ar, size: 12),
-                      ),
-                    ],
+      builder: (ctx) => Directionality(
+        textDirection: s.ar ? TextDirection.rtl : TextDirection.ltr,
+        child: VaultSheetShell(
+          palette: p,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: p.glassFill,
+                      borderRadius: BorderRadius.circular(VaultRadii.tile),
+                      border: Border.all(color: p.glassBorder),
+                    ),
+                    alignment: Alignment.center,
+                    child: Icon(
+                      iconForMimeOrName(file.mimeType, file.name),
+                      color: p.champagne,
+                      size: 20,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          file.name,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: VaultText.heading(p, s.ar, size: 16),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${formatBytes(file.size)} · ${file.isEncrypted ? s.aesVerifiedLabel : s.keyUnsetBadge}',
+                          style: VaultText.monoText(
+                            p,
+                            s.aesVerifiedLabel,
+                            size: 11.5,
+                            color: p.secondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              if (file.sha256.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                VaultSurface(
+                  palette: p,
+                  borderRadius: VaultRadii.tile,
+                  padding: const EdgeInsets.all(12),
+                  child: Text(
+                    'SHA-256  ${file.sha256}',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: VaultText.mono(p, size: 11, color: p.secondary),
                   ),
                 ),
               ],
-            ),
-            if (file.sha256.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: p.surfaceAlt,
-                  borderRadius: BorderRadius.circular(VaultRadii.xs),
-                  border: Border.all(color: p.rule),
+              const SizedBox(height: 14),
+              if (isPreviewableFile(file.mimeType, file.name)) ...[
+                _MenuGlassTile(
+                  palette: p,
+                  isArabic: s.ar,
+                  icon: Icons.visibility_outlined,
+                  title: isPdfFile(file.mimeType, file.name)
+                      ? s.previewPdf
+                      : (isVideoFile(file.mimeType, file.name)
+                          ? s.previewVideo
+                          : (isAudioFile(file.mimeType, file.name)
+                              ? s.previewAudio
+                              : s.previewImage)),
+                  tone: p.champagne,
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _openPreview(file);
+                  },
                 ),
-                child: Text(
-                  'SHA-256  ${file.sha256}',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: VaultText.mono(p, size: 11),
-                ),
+                const SizedBox(height: 8),
+              ],
+              _MenuGlassTile(
+                palette: p,
+                isArabic: s.ar,
+                icon: Icons.download_outlined,
+                title: s.downloadAndDecrypt,
+                tone: p.ink,
+                onTap: () {
+                  Navigator.pop(ctx);
+                  widget.controller.downloadFile(file);
+                },
+              ),
+              const SizedBox(height: 8),
+              _MenuGlassTile(
+                palette: p,
+                isArabic: s.ar,
+                icon: Icons.drive_file_rename_outline,
+                title: s.renameFile,
+                tone: p.ink,
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showRenameDialog(
+                    title: s.renameFile,
+                    initial: file.name,
+                    onSave: (val) =>
+                        widget.controller.renameFile(file.id, val),
+                  );
+                },
+              ),
+              const SizedBox(height: 8),
+              _MenuGlassTile(
+                palette: p,
+                isArabic: s.ar,
+                icon: Icons.drive_file_move_outlined,
+                title: s.moveFile,
+                tone: p.ink,
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showMoveFolderPickerSheet(
+                    onPickTarget: (targetId) =>
+                        widget.controller.moveFile(file.id, targetId),
+                  );
+                },
+              ),
+              const SizedBox(height: 8),
+              _MenuGlassTile(
+                palette: p,
+                isArabic: s.ar,
+                icon: Icons.delete_outline_rounded,
+                title: s.deleteFile,
+                tone: p.coral,
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _showDeleteConfirmDialog(
+                    count: 1,
+                    onConfirm: () => widget.controller.deleteFile(file.id),
+                  );
+                },
               ),
             ],
-            const SizedBox(height: 14),
-            _SheetActionList(
-              palette: p,
-              isArabic: s.ar,
-              items: [
-                if (isPreviewableFile(file.mimeType, file.name))
-                  _SheetActionItem(
-                    icon: Icons.visibility_outlined,
-                    title: isPdfFile(file.mimeType, file.name)
-                        ? s.previewPdf
-                        : (isVideoFile(file.mimeType, file.name)
-                            ? s.previewVideo
-                            : (isAudioFile(file.mimeType, file.name)
-                                ? s.previewAudio
-                                : s.previewImage)),
-                    onTap: () {
-                      Navigator.pop(ctx);
-                      _openPreview(file);
-                    },
-                  ),
-                _SheetActionItem(
-                  icon: Icons.download_outlined,
-                  title: s.downloadAndDecrypt,
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    widget.controller.downloadFile(file);
-                  },
-                ),
-                _SheetActionItem(
-                  icon: Icons.drive_file_rename_outline,
-                  title: s.renameFile,
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _showRenameSheet(
-                      title: s.renameFile,
-                      initial: file.name,
-                      onSave: (val) =>
-                          widget.controller.renameFile(file.id, val),
-                    );
-                  },
-                ),
-                _SheetActionItem(
-                  icon: Icons.drive_file_move_outlined,
-                  title: s.moveFile,
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _showMoveTargetSheet(
-                      onPickTarget: (targetId) =>
-                          widget.controller.moveFile(file.id, targetId),
-                    );
-                  },
-                ),
-                _SheetActionItem(
-                  icon: Icons.delete_outline,
-                  title: s.deleteFile,
-                  isDanger: true,
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    widget.controller.deleteFile(file.id);
-                  },
-                ),
-              ],
-            ),
-          ],
+          ),
         ),
       ),
     );
   }
 
-  void _showRenameSheet({
-    required String title,
-    required String initial,
-    required ValueChanged<String> onSave,
-  }) {
-    final p = widget.palette;
-    final s = widget.controller.strings;
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (ctx) => _PromptSheetForm(
-        palette: p,
-        isArabic: s.ar,
-        title: title,
-        initialText: initial,
-        cancelLabel: s.cancel,
-        confirmLabel: s.save,
-        onSubmit: onSave,
-      ),
-    );
-  }
-
-  void _showSortSheet() {
+  void _showSortAndFilterSheet() {
     HapticFeedback.selectionClick();
     final p = widget.palette;
     final s = widget.controller.strings;
     final options = <(_SortBy, String, IconData)>[
-      (_SortBy.date, s.sortDate, Icons.schedule_outlined),
-      (_SortBy.name, s.sortName, Icons.sort_by_alpha_outlined),
-      (_SortBy.size, s.sortSize, Icons.data_usage_outlined),
+      (_SortBy.date, s.sortDate, Icons.schedule_rounded),
+      (_SortBy.name, s.sortName, Icons.sort_by_alpha_rounded),
+      (_SortBy.size, s.sortSize, Icons.data_usage_rounded),
     ];
 
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => VaultSheetShell(
-        palette: p,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(s.sortByTitle, style: VaultText.heading(p, s.ar, size: 17)),
-            const SizedBox(height: 12),
-            _SheetActionList(
-              palette: p,
-              isArabic: s.ar,
-              items: [
-                for (final opt in options)
-                  _SheetActionItem(
+      builder: (ctx) => Directionality(
+        textDirection: s.ar ? TextDirection.rtl : TextDirection.ltr,
+        child: VaultSheetShell(
+          palette: p,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(s.sortByTitle,
+                      style: VaultText.heading(p, s.ar, size: 18)),
+                  VaultMonoChip(
+                    palette: p,
+                    label: s.filterTitle,
+                    dotColor: _showFilters ? p.champagne : null,
+                    onTap: () {
+                      setState(() => _showFilters = !_showFilters);
+                      Navigator.pop(ctx);
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              for (final opt in options)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: _MenuGlassTile(
+                    palette: p,
+                    isArabic: s.ar,
                     icon: opt.$3,
                     title: opt.$2,
                     trailingText: _sortBy == opt.$1
                         ? (_sortAsc ? '↑' : '↓')
                         : null,
-                    isActive: _sortBy == opt.$1,
+                    tone: _sortBy == opt.$1 ? p.champagne : p.ink,
                     onTap: () {
                       Navigator.pop(ctx);
                       setState(() {
@@ -451,9 +842,9 @@ class _FilesScreenState extends State<FilesScreen> {
                       });
                     },
                   ),
-              ],
-            ),
-          ],
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -490,12 +881,6 @@ class _FilesScreenState extends State<FilesScreen> {
     return _sortAsc ? cmp : -cmp;
   }
 
-  String _sortLabel(AppStrings s) => switch (_sortBy) {
-        _SortBy.date => s.sortDate,
-        _SortBy.name => s.sortName,
-        _SortBy.size => s.sortSize,
-      };
-
   Map<int, String> _buildFolderPaths(List<Folder> allFolders) {
     final byId = <int, Folder>{for (final f in allFolders) f.id: f};
     final paths = <int, String>{};
@@ -512,6 +897,17 @@ class _FilesScreenState extends State<FilesScreen> {
       paths[folder.id] = segments.join(' / ');
     }
     return paths;
+  }
+
+  Color _statusDotColorForFile(AppPalette p, FileRecord file) {
+    final task = widget.controller.latestTaskFor(file.id);
+    if (task == null) return p.signalGreen;
+    return switch (task.state) {
+      TaskState.running => p.champagne,
+      TaskState.paused || TaskState.queued => p.secondary,
+      TaskState.failed => p.coral,
+      TaskState.completed => p.signalGreen,
+    };
   }
 
   @override
@@ -575,53 +971,27 @@ class _FilesScreenState extends State<FilesScreen> {
       }
     }
 
-    var totalVaultBytes = 0;
-    var imgBytes = 0;
-    var pdfBytes = 0;
-    var videoAudioBytes = 0;
-    var otherBytes = 0;
-    for (final f in allVaultFiles) {
-      totalVaultBytes += f.size;
-      if (isImageFile(f.mimeType, f.name)) {
-        imgBytes += f.size;
-      } else if (isPdfFile(f.mimeType, f.name)) {
-        pdfBytes += f.size;
-      } else if (isVideoFile(f.mimeType, f.name) ||
-          isAudioFile(f.mimeType, f.name)) {
-        videoAudioBytes += f.size;
-      } else {
-        otherBytes += f.size;
-      }
-    }
+    final headerTitle = _selectionMode
+        ? s.selectedCount(_totalSelected)
+        : (widget.isRecent
+            ? s.recentTitle
+            : (snap.currentFolder?.name ?? s.filesTitle));
 
-    final showStatusDot = !_selectionMode &&
-        (ctrl.authStatus.isAuthorized ||
-            ctrl.isReconnecting ||
-            ctrl.hasSavedSession);
-    final statusColor = ctrl.authStatus.isAuthorized
-        ? p.cobalt
-        : (ctrl.isReconnecting ? p.signal : p.danger);
-    final statusLabel = ctrl.authStatus.isAuthorized
-        ? s.statusSynced
-        : (ctrl.isReconnecting ? s.statusConnecting : s.statusOfflineTap);
-    final statusOnTap = (!ctrl.authStatus.isAuthorized &&
-            !ctrl.isReconnecting &&
-            ctrl.hasSavedSession)
-        ? ctrl.connect
-        : null;
+    final destTitle = ctrl.activeDestinationTitle(s);
+    final destOwned = ctrl.activeDestinationOwnedByMe;
 
     return Stack(
       children: [
         ListView(
           padding: EdgeInsets.fromLTRB(
+            VaultSpacing.screenHorizontal,
             16,
-            14,
-            16,
-            _selectionMode ? widget.bottomPadding + 20 : widget.bottomPadding,
+            VaultSpacing.screenHorizontal,
+            _selectionMode ? widget.bottomPadding + 36 : widget.bottomPadding + 52,
           ),
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           children: [
-            // Archival Masthead (large unobstructed display title + borderless actions)
+            // Header: large title "Vault" / "الخزنة" + List/Grid & Select controls
             Row(
               children: [
                 Expanded(
@@ -629,19 +999,15 @@ class _FilesScreenState extends State<FilesScreen> {
                     fit: BoxFit.scaleDown,
                     alignment: AlignmentDirectional.centerStart,
                     child: Text(
-                      _selectionMode
-                          ? s.selectedCount(_totalSelected)
-                          : (widget.isRecent
-                              ? s.recentTitle
-                              : (snap.currentFolder?.name ?? s.appTitle)),
+                      headerTitle,
                       maxLines: 1,
                       softWrap: false,
-                      style: VaultText.display(p, s.ar, size: 28),
+                      style: VaultText.display(p, s.ar, size: 34),
                     ),
                   ),
                 ),
-                const SizedBox(width: 6),
-                _MastheadIconButton(
+                const SizedBox(width: 8),
+                _HeaderGlassIcon(
                   palette: p,
                   active: _selectionMode,
                   tooltip: _selectionMode ? s.clearSelection : s.selectAll,
@@ -651,337 +1017,265 @@ class _FilesScreenState extends State<FilesScreen> {
                       _exitSelectionMode();
                     } else {
                       setState(() => _selectionMode = true);
-                      widget.controller.setSelecting(true);
+                      ctrl.setSelecting(true);
                     }
                   },
-                  icon: Icon(
-                    _selectionMode ? Icons.close : Icons.checklist_rounded,
-                    size: 20,
-                    color: _selectionMode ? p.cobalt : p.ink,
-                  ),
+                  icon: _selectionMode
+                      ? Icons.close_rounded
+                      : Icons.check_circle_outline_rounded,
                 ),
-                _MastheadIconButton(
+                const SizedBox(width: 8),
+                _HeaderGlassIcon(
                   palette: p,
+                  active: _gridMode,
                   tooltip: _gridMode ? 'List view' : 'Grid view',
                   onTap: () {
                     HapticFeedback.selectionClick();
                     setState(() => _gridMode = !_gridMode);
                   },
-                  icon: Icon(
-                    _gridMode
-                        ? Icons.view_list_outlined
-                        : Icons.grid_view_outlined,
-                    size: 20,
-                    color: p.ink,
-                  ),
-                ),
-                if (!widget.isRecent)
-                  _MastheadIconButton(
-                    palette: p,
-                    tooltip: s.newFolder,
-                    onTap: () {
-                      HapticFeedback.selectionClick();
-                      _showNewFolderSheet();
-                    },
-                    icon: AppSvgIcon(AppIcons.addFolder, size: 19, color: p.ink),
-                  ),
-                const SizedBox(width: 6),
-                VaultTap(
-                  onTap: () {
-                    HapticFeedback.mediumImpact();
-                    _showUploadSheet();
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 9),
-                    decoration: BoxDecoration(
-                      color: p.signal,
-                      borderRadius: BorderRadius.circular(VaultRadii.sm),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        AppSvgIcon(AppIcons.cloudUpload,
-                            size: 17, color: p.signalInk),
-                        const SizedBox(width: 5),
-                        Text(
-                          s.upload,
-                          style: VaultText.body(
-                            p,
-                            s.ar,
-                            size: 13,
-                            weight: FontWeight.w700,
-                            color: p.signalInk,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
+                  icon: _gridMode
+                      ? Icons.view_list_rounded
+                      : Icons.grid_view_rounded,
                 ),
               ],
             ),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                if (showStatusDot) ...[
-                  VaultStatusDot(
-                    palette: p,
-                    isArabic: s.ar,
-                    dotColor: statusColor,
-                    label: statusLabel,
-                    onTap: statusOnTap,
-                  ),
-                  const SizedBox(width: 12),
-                ],
-                Expanded(
-                  child: Text(
-                    s.foldersAndFiles(folders.length, files.length),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: VaultText.tabular(p, s.ar, size: 12.5),
-                  ),
-                ),
-              ],
-            ),
+            const SizedBox(height: 10),
 
-            if (!widget.isRecent &&
-                snap.currentFolder == null &&
-                allVaultFiles.isNotEmpty) ...[
-              const SizedBox(height: 10),
+            // Storage destination chip + "Owned by me" green dot badge + item count
+            if (!widget.isRecent)
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    s.totalVaultLabel,
-                    style: VaultText.body(p, s.ar, size: 11.5, color: p.muted),
-                  ),
-                  Text(
-                    formatBytes(totalVaultBytes),
-                    style: VaultText.tabular(
-                      p,
-                      s.ar,
-                      size: 11.5,
-                      weight: FontWeight.w600,
-                      color: p.ink,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              VaultProportionalTape(
-                palette: p,
-                imageBytes: imgBytes,
-                pdfBytes: pdfBytes,
-                videoAudioBytes: videoAudioBytes,
-                otherBytes: otherBytes,
-                height: 3,
-                borderRadius: VaultRadii.pill,
-              ),
-            ],
-            const SizedBox(height: 12),
-
-            // Recessed Search Field
-            VaultSurface(
-              palette: p,
-              borderRadius: VaultRadii.sm,
-              backgroundColor: p.surfaceAlt,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-              child: Row(
-                children: [
-                  Icon(Icons.search, size: 18, color: p.muted),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: TextField(
-                      controller: _searchCtrl,
-                      onChanged: (_) => setState(() {}),
-                      style: VaultText.body(p, s.ar, size: 14),
-                      decoration: InputDecoration(
-                        hintText: s.searchHint,
-                        hintStyle:
-                            VaultText.body(p, s.ar, size: 14, color: p.muted),
-                        border: InputBorder.none,
+                  Flexible(
+                    child: VaultTap(
+                      onTap: () => showStorageDestinationSheet(
+                        context,
+                        palette: p,
+                        controller: ctrl,
                       ),
-                    ),
-                  ),
-                  if (_searchCtrl.text.isNotEmpty)
-                    GestureDetector(
-                      onTap: () => setState(() => _searchCtrl.clear()),
-                      child: Icon(Icons.close, size: 17, color: p.muted),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-
-            // Baseline-Indexed Sort & Filter Tabs
-            Container(
-              decoration: BoxDecoration(
-                border: Border(bottom: BorderSide(color: p.rule, width: 1)),
-              ),
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    VaultTap(
-                      onTap: _showSortSheet,
-                      child: Padding(
+                      child: VaultSurface(
+                        palette: p,
+                        borderRadius: VaultRadii.pill,
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 8),
+                            horizontal: 12, vertical: 6),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(
-                              _sortAsc
-                                  ? Icons.arrow_upward_rounded
-                                  : Icons.arrow_downward_rounded,
-                              size: 13,
-                              color: p.cobalt,
+                            Container(
+                              width: 7,
+                              height: 7,
+                              decoration: BoxDecoration(
+                                color: ctrl.authStatus.isAuthorized || ctrl.demoMode
+                                    ? p.signalGreen
+                                    : p.champagne,
+                                shape: BoxShape.circle,
+                              ),
                             ),
-                            const SizedBox(width: 4),
-                            Text(
-                              _sortLabel(s),
-                              style: VaultText.body(
-                                p,
-                                s.ar,
-                                size: 12.5,
-                                weight: FontWeight.w600,
+                            const SizedBox(width: 7),
+                            Flexible(
+                              child: Text(
+                                destTitle,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: VaultText.monoText(
+                                  p,
+                                  destTitle,
+                                  size: 11.5,
+                                  weight: FontWeight.w500,
+                                  color: p.ink,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 7, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: p.glassElevatedFill,
+                                borderRadius:
+                                    BorderRadius.circular(VaultRadii.pill),
+                                border: Border.all(color: p.glassBorder),
+                              ),
+                              child: Text(
+                                destOwned ? s.ownedByMeChip : s.adminChip,
+                                style: VaultText.monoText(
+                                  p,
+                                  destOwned ? s.ownedByMeChip : s.adminChip,
+                                  size: 10,
+                                  color: p.secondary,
+                                ),
                               ),
                             ),
                           ],
                         ),
                       ),
                     ),
-                    Container(
-                      width: 1,
-                      height: 14,
-                      margin: const EdgeInsets.symmetric(horizontal: 8),
-                      color: p.rule,
-                    ),
-                    for (final entry in filterEntries)
-                      VaultTap(
-                        onTap: () {
-                          HapticFeedback.selectionClick();
-                          setState(() => _filter = entry.$1);
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 8),
-                          decoration: BoxDecoration(
-                            border: Border(
-                              bottom: BorderSide(
-                                color: _filter == entry.$1
-                                    ? p.cobalt
-                                    : Colors.transparent,
-                                width: 2,
-                              ),
-                            ),
-                          ),
-                          child: Text(
-                            entry.$2,
-                            style: VaultText.body(
-                              p,
-                              s.ar,
-                              size: 12.5,
-                              weight: _filter == entry.$1
-                                  ? FontWeight.w700
-                                  : FontWeight.w500,
-                              color: _filter == entry.$1 ? p.ink : p.muted,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
+                  ),
+                ],
+              ),
+            const SizedBox(height: 14),
+
+            // Glass Search Bar + Filter Button
+            VaultGlassSearchField(
+              palette: p,
+              isArabic: s.ar,
+              controller: _searchCtrl,
+              hintText: s.searchHint,
+              onChanged: (_) => setState(() {}),
+              trailingAction: IconButton(
+                onPressed: () {
+                  setState(() => _showFilters = !_showFilters);
+                },
+                onLongPress: _showSortAndFilterSheet,
+                tooltip: s.filterTitle,
+                icon: Icon(
+                  Icons.tune_rounded,
+                  size: 18,
+                  color: (_showFilters || _filter != _FileFilter.all)
+                      ? p.champagne
+                      : p.secondary,
                 ),
+                visualDensity: VisualDensity.compact,
               ),
             ),
 
-            // Inline Typographic Breadcrumbs
-            if (!widget.isRecent && snap.breadcrumbs.isNotEmpty) ...[
+            if (_showFilters || _filter != _FileFilter.all) ...[
               const SizedBox(height: 10),
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(
                   children: [
-                    VaultTap(
-                      onTap: () => _navigateToFolder(null),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 4, vertical: 4),
-                        child: Text(
-                          s.myFiles,
-                          style: VaultText.body(
-                            p,
-                            s.ar,
-                            size: 12.5,
-                            weight: FontWeight.w500,
-                            color: p.muted,
-                          ),
+                    for (final entry in filterEntries)
+                      Padding(
+                        padding: const EdgeInsetsDirectional.only(end: 8),
+                        child: VaultMonoChip(
+                          palette: p,
+                          label: entry.$2,
+                          dotColor: _filter == entry.$1 ? p.champagne : null,
+                          textColor:
+                              _filter == entry.$1 ? p.ink : p.secondary,
+                          backgroundColor: _filter == entry.$1
+                              ? p.champagneSoft
+                              : p.glassFill,
+                          borderColor: _filter == entry.$1
+                              ? p.champagne
+                              : p.glassBorder,
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            setState(() => _filter = entry.$1);
+                          },
                         ),
                       ),
+                    VaultMonoChip(
+                      palette: p,
+                      label: s.sortByTitle,
+                      icon: _sortAsc
+                          ? Icons.arrow_upward_rounded
+                          : Icons.arrow_downward_rounded,
+                      onTap: _showSortAndFilterSheet,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            // Horizontal Glass Pill Breadcrumbs (RTL-aware)
+            if (!widget.isRecent && snap.breadcrumbs.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    VaultMonoChip(
+                      palette: p,
+                      label: s.myFiles,
+                      icon: Icons.home_outlined,
+                      onTap: () => _navigateToFolder(null),
                     ),
                     for (var i = 0; i < snap.breadcrumbs.length; i++) ...[
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
                         child: Icon(
-                          s.ar ? Icons.chevron_left : Icons.chevron_right,
-                          size: 15,
+                          s.ar
+                              ? Icons.chevron_left_rounded
+                              : Icons.chevron_right_rounded,
+                          size: 16,
                           color: p.muted,
                         ),
                       ),
-                      VaultTap(
+                      VaultMonoChip(
+                        palette: p,
+                        label: snap.breadcrumbs[i].name,
+                        textColor: i == snap.breadcrumbs.length - 1
+                            ? p.champagne
+                            : p.secondary,
+                        backgroundColor: i == snap.breadcrumbs.length - 1
+                            ? p.champagneSoft
+                            : p.glassFill,
+                        borderColor: i == snap.breadcrumbs.length - 1
+                            ? p.champagne
+                            : p.glassBorder,
                         onTap: () => _navigateToFolder(snap.breadcrumbs[i].id),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 4, vertical: 4),
-                          child: Text(
-                            snap.breadcrumbs[i].name,
-                            style: VaultText.body(
-                              p,
-                              s.ar,
-                              size: 12.5,
-                              weight: i == snap.breadcrumbs.length - 1
-                                  ? FontWeight.w700
-                                  : FontWeight.w500,
-                              color: i == snap.breadcrumbs.length - 1
-                                  ? p.cobalt
-                                  : p.muted,
-                            ),
-                          ),
-                        ),
                       ),
                     ],
                   ],
                 ),
               ),
             ],
-            const SizedBox(height: 14),
+            const SizedBox(height: 16),
 
-            // Content
-            if (folders.isEmpty && files.isEmpty)
+            // Loading Skeleton State
+            if (ctrl.isLoadingVault)
+              _GlassSkeletonList(palette: p)
+            // Empty Vault / Empty Search State
+            else if (folders.isEmpty && files.isEmpty)
               VaultSurface(
                 palette: p,
-                borderRadius: VaultRadii.md,
+                borderRadius: VaultRadii.card,
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 34),
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 36),
                 child: Column(
                   children: [
-                    AppSvgIcon(AppIcons.folderOpen, size: 34, color: p.muted),
-                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: 64,
+                      height: 64,
+                      child: CustomPaint(
+                        painter: _VaultDoorPainter(
+                          strokeColor: p.champagne,
+                          mutedColor: p.glassBorder,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
                     Text(
                       query.isNotEmpty ? s.noMatching : s.folderEmpty,
-                      style: VaultText.heading(p, s.ar, size: 16),
+                      textAlign: TextAlign.center,
+                      style: VaultText.heading(p, s.ar, size: 19),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 6),
                     Text(
                       query.isNotEmpty
                           ? s.nothingMatched(_searchCtrl.text)
                           : s.emptyDesc,
                       textAlign: TextAlign.center,
-                      style: VaultText.body(p, s.ar, size: 13, color: p.muted),
+                      style: VaultText.body(p, s.ar,
+                          size: 13.5, color: p.secondary),
                     ),
+                    if (query.isEmpty) ...[
+                      const SizedBox(height: 20),
+                      VaultPillButton(
+                        palette: p,
+                        isArabic: s.ar,
+                        expand: false,
+                        height: 46,
+                        icon: Icons.add_rounded,
+                        label: s.uploadFileAction,
+                        onPressed: _showUploadBottomSheet,
+                      ),
+                    ],
                   ],
                 ),
               )
+            // Grid View (thumbnails of images & PDF first pages with glass caption overlays)
             else if (_gridMode)
               GridView.builder(
                 shrinkWrap: true,
@@ -989,62 +1283,88 @@ class _FilesScreenState extends State<FilesScreen> {
                 itemCount: folders.length + files.length,
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 2,
-                  mainAxisSpacing: 10,
-                  crossAxisSpacing: 10,
-                  childAspectRatio: 0.96,
+                  mainAxisSpacing: 12,
+                  crossAxisSpacing: 12,
+                  childAspectRatio: 0.92,
                 ),
                 itemBuilder: (ctx, index) {
                   if (index < folders.length) {
                     final folder = folders[index];
                     final selected = _selectedFolderIds.contains(folder.id);
                     final itemCount = childCounts[folder.id] ?? 0;
-                    return VaultTap(
-                      onTap: () => _selectionMode
-                          ? _toggleFolderSelection(folder.id)
-                          : _navigateToFolder(folder.id),
-                      onLongPress: () => _toggleFolderSelection(folder.id),
-                      child: VaultSurface(
-                        palette: p,
-                        borderRadius: VaultRadii.md,
-                        backgroundColor: selected ? p.cobaltSoft : p.surface,
-                        borderColor: selected ? p.cobalt : p.rule,
-                        padding: const EdgeInsets.all(14),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Row(
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 5),
+                      child: VaultTap(
+                        onTap: () => _selectionMode
+                            ? _toggleFolderSelection(folder.id)
+                            : _navigateToFolder(folder.id),
+                        onLongPress: () => _toggleFolderSelection(folder.id),
+                        child: VaultStackedGlassCard(
+                          palette: p,
+                          borderRadius: VaultRadii.md,
+                          child: VaultSurface(
+                            palette: p,
+                            borderRadius: VaultRadii.md,
+                            backgroundColor:
+                                selected ? p.champagneSoft : p.glassFill,
+                            borderColor:
+                                selected ? p.champagne : p.glassBorder,
+                            padding: const EdgeInsets.all(14),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                AppSvgIcon(AppIcons.folderOpen,
-                                    size: 26, color: p.cobalt),
-                                if (_selectionMode)
-                                  Icon(
-                                    selected
-                                        ? Icons.check_circle
-                                        : Icons.radio_button_unchecked,
-                                    size: 19,
-                                    color: selected ? p.cobalt : p.muted,
-                                  ),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Container(
+                                      width: 40,
+                                      height: 40,
+                                      decoration: BoxDecoration(
+                                        color: p.champagneSoft,
+                                        borderRadius: BorderRadius.circular(
+                                            VaultRadii.tile),
+                                      ),
+                                      alignment: Alignment.center,
+                                      child: Icon(Icons.folder_outlined,
+                                          size: 20, color: p.champagne),
+                                    ),
+                                    if (_selectionMode)
+                                      _CircularCheck(
+                                          palette: p, selected: selected),
+                                  ],
+                                ),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      folder.name,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: VaultText.body(
+                                        p,
+                                        s.ar,
+                                        size: 15,
+                                        weight: FontWeight.w600,
+                                        applyArabicScale: false,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      s.itemsCountLabel(itemCount),
+                                      style: VaultText.monoText(
+                                        p,
+                                        s.itemsCountLabel(itemCount),
+                                        size: 11,
+                                        color: p.secondary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ],
                             ),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  folder.name,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: VaultText.body(p, s.ar,
-                                      size: 14, weight: FontWeight.w600),
-                                ),
-                                Text(
-                                  s.itemsCountLabel(itemCount),
-                                  style: VaultText.tabular(p, s.ar, size: 12),
-                                ),
-                              ],
-                            ),
-                          ],
+                          ),
                         ),
                       ),
                     );
@@ -1065,6 +1385,7 @@ class _FilesScreenState extends State<FilesScreen> {
                     selected: selected,
                     selectionMode: _selectionMode,
                     locationLabel: locationLabel,
+                    statusDotColor: _statusDotColorForFile(p, file),
                     onTap: () => _selectionMode
                         ? _toggleFileSelection(file.id)
                         : (previewable
@@ -1074,94 +1395,126 @@ class _FilesScreenState extends State<FilesScreen> {
                   );
                 },
               )
+            // List View (individual glass cards with generous breathing room)
             else
-              VaultSurface(
-                palette: p,
-                borderRadius: VaultRadii.md,
-                child: Column(
-                  children: [
-                    if (isGlobalSearch && !widget.isRecent)
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 9),
-                        decoration: BoxDecoration(
-                          color: p.surfaceAlt,
-                          border:
-                              Border(bottom: BorderSide(color: p.rule, width: 1)),
-                        ),
-                        child: Text(
-                          s.searchResultsLabel(folders.length + files.length),
-                          style: VaultText.body(p, s.ar,
-                              size: 12, weight: FontWeight.w600, color: p.muted),
-                        ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (isGlobalSearch && !widget.isRecent)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: VaultSectionHeader(
+                        palette: p,
+                        isArabic: s.ar,
+                        title: s.searchResultsLabel(
+                            folders.length + files.length),
                       ),
-                    for (var i = 0; i < folders.length; i++)
-                      _FolderListTile(
+                    ),
+                  for (final folder in folders)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 5, bottom: 10),
+                      child: _FolderGlassRow(
                         palette: p,
                         isArabic: s.ar,
                         itemsLabel:
-                            s.itemsCountLabel(childCounts[folders[i].id] ?? 0),
-                        folder: folders[i],
-                        showDivider: i > 0,
+                            s.itemsCountLabel(childCounts[folder.id] ?? 0),
+                        folder: folder,
                         selectionMode: _selectionMode,
-                        selected: _selectedFolderIds.contains(folders[i].id),
+                        selected: _selectedFolderIds.contains(folder.id),
                         onTap: () => _selectionMode
-                            ? _toggleFolderSelection(folders[i].id)
-                            : _navigateToFolder(folders[i].id),
-                        onLongPress: () =>
-                            _toggleFolderSelection(folders[i].id),
+                            ? _toggleFolderSelection(folder.id)
+                            : _navigateToFolder(folder.id),
+                        onLongPress: () => _toggleFolderSelection(folder.id),
                       ),
-                    for (var i = 0; i < files.length; i++)
-                      _FileListTile(
+                    ),
+                  for (final file in files)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: _FileGlassRow(
                         palette: p,
                         isArabic: s.ar,
-                        file: files[i],
-                        subtitleOverride: (isGlobalSearch || widget.isRecent)
-                            ? (files[i].folderId == null
+                        file: file,
+                        folderPathLabel: (isGlobalSearch || widget.isRecent)
+                            ? (file.folderId == null
                                 ? s.myFiles
-                                : folderPaths[files[i].folderId])
+                                : folderPaths[file.folderId])
                             : null,
-                        showDivider: folders.isNotEmpty || i > 0,
+                        statusDotColor: _statusDotColorForFile(p, file),
                         selectionMode: _selectionMode,
-                        selected: _selectedFileIds.contains(files[i].id),
+                        selected: _selectedFileIds.contains(file.id),
                         onTap: () => _selectionMode
-                            ? _toggleFileSelection(files[i].id)
+                            ? _toggleFileSelection(file.id)
                             : (isPreviewableFile(
-                                    files[i].mimeType, files[i].name)
-                                ? _openPreview(files[i])
-                                : _showFileInspector(files[i])),
-                        onLongPress: () => _toggleFileSelection(files[i].id),
+                                    file.mimeType, file.name)
+                                ? _openPreview(file)
+                                : _showFileInspector(file)),
+                        onLongPress: () => _toggleFileSelection(file.id),
+                        onInspect: () => _showFileInspector(file),
                       ),
-                  ],
-                ),
+                    ),
+                ],
               ),
           ],
         ),
 
-        // Multi-Select Dock (replaces VaultDock smoothly)
+        // Floating primary "+" glass button above nav bar
+        if (!_selectionMode)
+          PositionedDirectional(
+            end: 20,
+            bottom: widget.bottomPadding - 4,
+            child: SafeArea(
+              top: false,
+              child: VaultTap(
+                onTap: () {
+                  HapticFeedback.mediumImpact();
+                  _showPlusActionMenu();
+                },
+                child: Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    color: p.primaryBtnFill,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: p.shadowColor,
+                        blurRadius: 24,
+                        offset: const Offset(0, 12),
+                      ),
+                    ],
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(Icons.add_rounded,
+                      size: 26, color: p.primaryBtnInk),
+                ),
+              ),
+            ),
+          ),
+
+        // Multi-Select Floating Liquid-Glass Action Bar
         if (_selectionMode)
           Positioned(
-            left: 16,
-            right: 16,
+            left: 20,
+            right: 20,
             bottom: 0,
             child: SafeArea(
               top: false,
               child: Padding(
-                padding: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.only(bottom: 16),
                 child: VaultSurface(
                   palette: p,
-                  borderRadius: VaultRadii.dock,
+                  borderRadius: VaultRadii.pill,
                   elevated: true,
+                  borderColor: p.glassTopLeftBorder,
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceAround,
                     children: [
                       _BulkActionBtn(
                         palette: p,
                         isArabic: s.ar,
-                        icon: Icons.select_all,
+                        icon: Icons.select_all_rounded,
                         label: s.selectAll,
                         onTap: () {
                           setState(() {
@@ -1183,7 +1536,7 @@ class _FilesScreenState extends State<FilesScreen> {
                         onTap: () {
                           final fIds = _selectedFolderIds.toList();
                           final fileIds = _selectedFileIds.toList();
-                          _showMoveTargetSheet(
+                          _showMoveFolderPickerSheet(
                             excludedFolderIds: fIds,
                             onPickTarget: (targetId) {
                               ctrl.moveMany(
@@ -1199,7 +1552,7 @@ class _FilesScreenState extends State<FilesScreen> {
                       _BulkActionBtn(
                         palette: p,
                         isArabic: s.ar,
-                        icon: Icons.drive_file_rename_outline,
+                        icon: Icons.drive_file_rename_outline_rounded,
                         label: s.renameAction,
                         enabled: _totalSelected == 1,
                         onTap: () {
@@ -1209,7 +1562,7 @@ class _FilesScreenState extends State<FilesScreen> {
                                 .where((f) => f.id == folderId)
                                 .firstOrNull;
                             if (folder == null) return;
-                            _showRenameSheet(
+                            _showRenameDialog(
                               title: s.renameFolder,
                               initial: folder.name,
                               onSave: (val) {
@@ -1223,7 +1576,7 @@ class _FilesScreenState extends State<FilesScreen> {
                                 .where((f) => f.id == fileId)
                                 .firstOrNull;
                             if (file == null) return;
-                            _showRenameSheet(
+                            _showRenameDialog(
                               title: s.renameFile,
                               initial: file.name,
                               onSave: (val) {
@@ -1251,16 +1604,23 @@ class _FilesScreenState extends State<FilesScreen> {
                       _BulkActionBtn(
                         palette: p,
                         isArabic: s.ar,
-                        icon: Icons.delete_outline,
+                        icon: Icons.delete_outline_rounded,
                         label: s.deleteAction,
                         isDanger: true,
                         enabled: _totalSelected > 0,
                         onTap: () {
-                          ctrl.deleteMany(
-                            folderIds: _selectedFolderIds.toList(),
-                            fileIds: _selectedFileIds.toList(),
+                          final fIds = _selectedFolderIds.toList();
+                          final fileIds = _selectedFileIds.toList();
+                          _showDeleteConfirmDialog(
+                            count: fIds.length + fileIds.length,
+                            onConfirm: () {
+                              ctrl.deleteMany(
+                                folderIds: fIds,
+                                fileIds: fileIds,
+                              );
+                              _exitSelectionMode();
+                            },
                           );
-                          _exitSelectionMode();
                         },
                       ),
                     ],
@@ -1274,79 +1634,16 @@ class _FilesScreenState extends State<FilesScreen> {
   }
 }
 
-class _BulkActionBtn extends StatelessWidget {
-  final AppPalette palette;
-  final bool isArabic;
-  final IconData icon;
-  final String label;
-  final bool isDanger;
-  final bool enabled;
-  final VoidCallback onTap;
-
-  const _BulkActionBtn({
-    required this.palette,
-    required this.isArabic,
-    required this.icon,
-    required this.label,
-    this.isDanger = false,
-    this.enabled = true,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final color = !enabled
-        ? palette.muted.withValues(alpha: 0.45)
-        : (isDanger ? palette.danger : palette.cobalt);
-    return GestureDetector(
-      onTap: enabled ? onTap : null,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 20, color: color),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              style: VaultText.body(
-                palette,
-                isArabic,
-                size: 11,
-                weight: FontWeight.w600,
-                color: color,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-String _fileExtensionTag(FileRecord file) {
-  final dot = file.name.lastIndexOf('.');
-  if (dot >= 0 && dot < file.name.length - 1) {
-    final ext = file.name.substring(dot + 1).toUpperCase();
-    if (ext.length <= 4) return ext;
-  }
-  if (isImageFile(file.mimeType, file.name)) return 'IMG';
-  if (isPdfFile(file.mimeType, file.name)) return 'PDF';
-  if (isVideoFile(file.mimeType, file.name)) return 'VID';
-  if (isAudioFile(file.mimeType, file.name)) return 'AUD';
-  return 'FILE';
-}
-
-class _MastheadIconButton extends StatelessWidget {
+class _HeaderGlassIcon extends StatelessWidget {
   final AppPalette palette;
   final bool active;
   final String tooltip;
   final VoidCallback onTap;
-  final Widget icon;
+  final IconData icon;
 
-  const _MastheadIconButton({
+  const _HeaderGlassIcon({
     required this.palette,
-    this.active = false,
+    required this.active,
     required this.tooltip,
     required this.onTap,
     required this.icon,
@@ -1354,161 +1651,82 @@ class _MastheadIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final p = palette;
     return Tooltip(
       message: tooltip,
       child: VaultTap(
         onTap: onTap,
         child: Container(
-          width: 36,
-          height: 36,
-          alignment: Alignment.center,
+          width: 40,
+          height: 40,
           decoration: BoxDecoration(
-            color: active ? palette.cobaltSoft : Colors.transparent,
-            borderRadius: BorderRadius.circular(VaultRadii.sm),
+            color: active ? p.champagneSoft : p.glassFill,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: active ? p.champagne : p.glassBorder,
+              width: 1,
+            ),
           ),
-          child: icon,
+          alignment: Alignment.center,
+          child: Icon(
+            icon,
+            size: 19,
+            color: active ? p.champagne : p.ink,
+          ),
         ),
       ),
     );
   }
 }
 
-class _PromptSheetForm extends StatefulWidget {
+class _CircularCheck extends StatelessWidget {
   final AppPalette palette;
-  final bool isArabic;
-  final String title;
-  final String initialText;
-  final String? hintText;
-  final String cancelLabel;
-  final String confirmLabel;
-  final ValueChanged<String> onSubmit;
+  final bool selected;
 
-  const _PromptSheetForm({
-    required this.palette,
-    required this.isArabic,
-    required this.title,
-    this.initialText = '',
-    this.hintText,
-    required this.cancelLabel,
-    required this.confirmLabel,
-    required this.onSubmit,
-  });
-
-  @override
-  State<_PromptSheetForm> createState() => _PromptSheetFormState();
-}
-
-class _PromptSheetFormState extends State<_PromptSheetForm> {
-  late final TextEditingController _ctrl =
-      TextEditingController(text: widget.initialText);
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  void _handleSubmit() {
-    final value = _ctrl.text.trim();
-    if (value.isNotEmpty) {
-      widget.onSubmit(value);
-    }
-    Navigator.pop(context);
-  }
+  const _CircularCheck({required this.palette, required this.selected});
 
   @override
   Widget build(BuildContext context) {
-    final p = widget.palette;
-    final isAr = widget.isArabic;
-    return VaultSheetShell(
-      palette: p,
-      outerPadding: EdgeInsets.fromLTRB(
-          12, 0, 12, 16 + MediaQuery.of(context).viewInsets.bottom),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(widget.title, style: VaultText.heading(p, isAr, size: 17)),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _ctrl,
-            autofocus: true,
-            textInputAction: TextInputAction.done,
-            onSubmitted: (_) => _handleSubmit(),
-            style: VaultText.body(p, isAr, size: 14.5),
-            decoration: InputDecoration(
-              hintText: widget.hintText,
-              hintStyle: widget.hintText != null
-                  ? VaultText.body(p, isAr, size: 14, color: p.muted)
-                  : null,
-              filled: true,
-              fillColor: p.surfaceAlt,
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(VaultRadii.sm),
-                borderSide: BorderSide(color: p.rule),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(VaultRadii.sm),
-                borderSide: BorderSide(color: p.cobalt, width: 1.5),
-              ),
-            ),
-          ),
-          const SizedBox(height: 14),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text(
-                  widget.cancelLabel,
-                  style: VaultText.body(p, isAr,
-                      size: 14, weight: FontWeight.w600, color: p.muted),
-                ),
-              ),
-              const SizedBox(width: 8),
-              ElevatedButton(
-                onPressed: _handleSubmit,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: p.signal,
-                  foregroundColor: p.signalInk,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(VaultRadii.sm),
-                  ),
-                ),
-                child: Text(
-                  widget.confirmLabel,
-                  style: VaultText.body(p, isAr,
-                      size: 14, weight: FontWeight.w700, color: p.signalInk),
-                ),
-              ),
-            ],
-          ),
-        ],
+    return Container(
+      width: 22,
+      height: 22,
+      decoration: BoxDecoration(
+        color: selected ? palette.champagne : palette.glassFill,
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: selected ? palette.champagne : palette.secondary,
+          width: 1.5,
+        ),
       ),
+      alignment: Alignment.center,
+      child: selected
+          ? Icon(
+              Icons.check_rounded,
+              size: 14,
+              color: palette.isDark
+                  ? const Color(0xFF050506)
+                  : const Color(0xFFF7F6F3),
+            )
+          : null,
     );
   }
 }
 
-class _FolderListTile extends StatelessWidget {
+class _FolderGlassRow extends StatelessWidget {
   final AppPalette palette;
   final bool isArabic;
   final String itemsLabel;
   final Folder folder;
-  final bool showDivider;
   final bool selectionMode;
   final bool selected;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
 
-  const _FolderListTile({
+  const _FolderGlassRow({
     required this.palette,
     required this.isArabic,
     required this.itemsLabel,
     required this.folder,
-    required this.showDivider,
     required this.selectionMode,
     required this.selected,
     required this.onTap,
@@ -1517,129 +1735,142 @@ class _FolderListTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
+    final p = palette;
+    return VaultTap(
       onTap: onTap,
       onLongPress: onLongPress,
-      child: Container(
-        padding: const EdgeInsetsDirectional.fromSTEB(12, 13, 14, 13),
-        decoration: BoxDecoration(
-          color: selected ? palette.cobaltSoft : null,
-          border: BorderDirectional(
-            start: BorderSide(color: palette.cobalt, width: 3),
-            top: showDivider
-                ? BorderSide(color: palette.rule, width: 1)
-                : BorderSide.none,
-          ),
-        ),
-        child: Row(
-          children: [
-            if (selectionMode) ...[
-              Icon(
-                selected ? Icons.check_circle : Icons.radio_button_unchecked,
-                size: 20,
-                color: selected ? palette.cobalt : palette.muted,
+      child: VaultStackedGlassCard(
+        palette: p,
+        borderRadius: VaultRadii.md,
+        child: VaultSurface(
+          palette: p,
+          borderRadius: VaultRadii.md,
+          backgroundColor: selected ? p.champagneSoft : p.glassFill,
+          borderColor: selected ? p.champagne : p.glassBorder,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+          child: Row(
+            children: [
+              if (selectionMode) ...[
+                _CircularCheck(palette: p, selected: selected),
+                const SizedBox(width: 12),
+              ],
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: p.champagneSoft,
+                  borderRadius: BorderRadius.circular(VaultRadii.tile),
+                ),
+                alignment: Alignment.center,
+                child: Icon(Icons.folder_outlined,
+                    size: 20, color: p.champagne),
               ),
-              const SizedBox(width: 10),
-            ],
-            AppSvgIcon(AppIcons.folderOpen, size: 20, color: palette.cobalt),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                folder.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: VaultText.body(
-                  palette,
-                  isArabic,
-                  size: 14.5,
-                  weight: FontWeight.w600,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      folder.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: VaultText.body(
+                        p,
+                        isArabic,
+                        size: 15,
+                        weight: FontWeight.w600,
+                        applyArabicScale: false,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      itemsLabel,
+                      style: VaultText.monoText(
+                        p,
+                        itemsLabel,
+                        size: 11,
+                        color: p.secondary,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              itemsLabel,
-              style: VaultText.tabular(palette, isArabic, size: 12),
-            ),
-          ],
+              const SizedBox(width: 8),
+              Icon(
+                isArabic
+                    ? Icons.chevron_left_rounded
+                    : Icons.chevron_right_rounded,
+                size: 18,
+                color: p.secondary,
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _FileListTile extends StatelessWidget {
+class _FileGlassRow extends StatelessWidget {
   final AppPalette palette;
   final bool isArabic;
   final FileRecord file;
-  final String? subtitleOverride;
-  final bool showDivider;
+  final String? folderPathLabel;
+  final Color statusDotColor;
   final bool selectionMode;
   final bool selected;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
+  final VoidCallback onInspect;
 
-  const _FileListTile({
+  const _FileGlassRow({
     required this.palette,
     required this.isArabic,
     required this.file,
-    this.subtitleOverride,
-    required this.showDivider,
+    this.folderPathLabel,
+    required this.statusDotColor,
     required this.selectionMode,
     required this.selected,
     required this.onTap,
     required this.onLongPress,
+    required this.onInspect,
   });
 
   @override
   Widget build(BuildContext context) {
-    final subtitleText = (subtitleOverride != null && subtitleOverride!.isNotEmpty)
-        ? subtitleOverride!
-        : formatTimestamp(file.createdAt);
-    final extTag = _fileExtensionTag(file);
-    final extColor = isPdfFile(file.mimeType, file.name)
-        ? palette.danger
-        : ((isVideoFile(file.mimeType, file.name) ||
-                isAudioFile(file.mimeType, file.name))
-            ? palette.cobalt
-            : palette.ink);
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
+    final p = palette;
+    final dateStr = formatTimestamp(file.createdAt);
+    final sizeStr = formatBytes(file.size);
+    final metaLine = dateStr.isNotEmpty ? '$sizeStr · $dateStr' : sizeStr;
+
+    return VaultTap(
       onTap: onTap,
       onLongPress: onLongPress,
-      child: Container(
+      child: VaultSurface(
+        palette: p,
+        borderRadius: VaultRadii.md,
+        backgroundColor: selected ? p.champagneSoft : p.glassFill,
+        borderColor: selected ? p.champagne : p.glassBorder,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: selected ? palette.cobaltSoft : null,
-          border: showDivider
-              ? Border(top: BorderSide(color: palette.rule, width: 1))
-              : null,
-        ),
         child: Row(
           children: [
             if (selectionMode) ...[
-              Icon(
-                selected ? Icons.check_circle : Icons.radio_button_unchecked,
-                size: 20,
-                color: selected ? palette.cobalt : palette.muted,
-              ),
-              const SizedBox(width: 10),
+              _CircularCheck(palette: p, selected: selected),
+              const SizedBox(width: 12),
             ],
             Container(
               width: 40,
-              padding: const EdgeInsets.symmetric(vertical: 4),
+              height: 40,
               decoration: BoxDecoration(
-                color: palette.surfaceAlt,
-                borderRadius: BorderRadius.circular(VaultRadii.xs),
-                border: Border.all(color: palette.rule),
+                color: p.glassElevatedFill,
+                borderRadius: BorderRadius.circular(VaultRadii.tile),
+                border: Border.all(color: p.glassBorder),
               ),
               alignment: Alignment.center,
-              child: Text(
-                extTag,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: VaultText.mono(palette, size: 10, color: extColor),
+              child: Icon(
+                iconForMimeOrName(file.mimeType, file.name),
+                size: 19,
+                color: p.champagne,
               ),
             ),
             const SizedBox(width: 12),
@@ -1651,37 +1882,74 @@ class _FileListTile extends StatelessWidget {
                     file.name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: VaultText.body(palette, isArabic,
-                        size: 14.5, weight: FontWeight.w600),
+                    style: VaultText.body(
+                      p,
+                      isArabic,
+                      size: 14.5,
+                      weight: FontWeight.w500,
+                      applyArabicScale: false,
+                    ),
                   ),
+                  const SizedBox(height: 3),
+                  if (folderPathLabel != null && folderPathLabel!.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 2),
+                      child: Row(
+                        children: [
+                          Icon(Icons.folder_outlined,
+                              size: 12, color: p.champagne),
+                          const SizedBox(width: 4),
+                          Flexible(
+                            child: Text(
+                              folderPathLabel!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: VaultText.monoText(
+                                p,
+                                folderPathLabel!,
+                                size: 11,
+                                color: p.champagne,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   Text(
-                    subtitleText,
+                    metaLine,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: VaultText.tabular(palette, isArabic, size: 12),
+                    style: VaultText.mono(p, size: 11, color: p.secondary),
                   ),
                 ],
               ),
             ),
             const SizedBox(width: 8),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
+            Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  formatBytes(file.size),
-                  style: VaultText.tabular(
-                    palette,
-                    isArabic,
-                    size: 12.5,
-                    weight: FontWeight.w600,
-                    color: palette.ink,
+                if (file.isEncrypted) ...[
+                  Icon(Icons.lock_outline_rounded,
+                      size: 13, color: p.secondary),
+                  const SizedBox(width: 6),
+                ],
+                Container(
+                  width: 7,
+                  height: 7,
+                  decoration: BoxDecoration(
+                    color: statusDotColor,
+                    shape: BoxShape.circle,
                   ),
                 ),
-                if (file.isEncrypted)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Icon(Icons.lock, size: 12, color: palette.signal),
+                if (!selectionMode) ...[
+                  const SizedBox(width: 4),
+                  IconButton(
+                    onPressed: onInspect,
+                    icon: Icon(Icons.more_horiz_rounded,
+                        size: 18, color: p.secondary),
+                    visualDensity: VisualDensity.compact,
                   ),
+                ],
               ],
             ),
           ],
@@ -1699,6 +1967,7 @@ class _GridFileCard extends StatefulWidget {
   final bool selected;
   final bool selectionMode;
   final String? locationLabel;
+  final Color statusDotColor;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
 
@@ -1710,6 +1979,7 @@ class _GridFileCard extends StatefulWidget {
     required this.selected,
     required this.selectionMode,
     this.locationLabel,
+    required this.statusDotColor,
     required this.onTap,
     required this.onLongPress,
   });
@@ -1766,143 +2036,154 @@ class _GridFileCardState extends State<_GridFileCard> {
       child: VaultSurface(
         palette: p,
         borderRadius: VaultRadii.md,
-        backgroundColor: widget.selected ? p.cobaltSoft : p.surface,
-        borderColor: widget.selected ? p.cobalt : p.rule,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+        backgroundColor: widget.selected ? p.champagneSoft : p.glassFill,
+        borderColor: widget.selected ? p.champagne : p.glassBorder,
+        child: Stack(
+          fit: StackFit.expand,
           children: [
-            Expanded(
+            if (hasThumb)
+              Image.file(
+                File(_thumbPath!),
+                fit: BoxFit.cover,
+                cacheWidth: 360,
+                errorBuilder: (_, _, _) => Center(
+                  child: Icon(
+                    iconForMimeOrName(file.mimeType, file.name),
+                    size: 32,
+                    color: p.champagne,
+                  ),
+                ),
+              )
+            else
+              Container(
+                color: p.cardSolid.withValues(alpha: p.isDark ? 0.65 : 0.45),
+                padding: const EdgeInsets.only(bottom: 44),
+                child: Center(
+                  child: Container(
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: p.glassFill,
+                      borderRadius: BorderRadius.circular(VaultRadii.tile),
+                      border: Border.all(color: p.glassBorder),
+                    ),
+                    alignment: Alignment.center,
+                    child: Icon(
+                      iconForMimeOrName(file.mimeType, file.name),
+                      size: 24,
+                      color: p.champagne,
+                    ),
+                  ),
+                ),
+              ),
+
+            // Top corner badges with WCAG AA scrim
+            PositionedDirectional(
+              top: 10,
+              start: 10,
               child: Container(
-                color: p.surfaceAlt,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    if (hasThumb)
-                      Image.file(
-                        File(_thumbPath!),
-                        fit: BoxFit.cover,
-                        cacheWidth: 360,
-                        errorBuilder: (_, _, _) => Center(
-                          child: Icon(
-                            iconForMimeOrName(file.mimeType, file.name),
-                            size: 30,
-                            color: p.muted,
-                          ),
-                        ),
-                      )
-                    else
-                      Center(
-                        child: Icon(
-                          iconForMimeOrName(file.mimeType, file.name),
-                          size: 32,
-                          color: isPdfFile(file.mimeType, file.name)
-                              ? p.danger
-                              : (isVideoFile(file.mimeType, file.name) ||
-                                      isAudioFile(file.mimeType, file.name)
-                                  ? p.cobalt
-                                  : p.muted),
-                        ),
-                      ),
-                    PositionedDirectional(
-                      top: 8,
-                      start: 8,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: hasThumb
-                              ? p.ground.withValues(alpha: 0.88)
-                              : p.surface,
-                          borderRadius: BorderRadius.circular(VaultRadii.xs),
-                          border: Border.all(color: p.rule),
-                        ),
-                        child: Text(
-                          ext,
-                          style: VaultText.mono(p, size: 10, color: p.ink),
-                        ),
-                      ),
-                    ),
-                    PositionedDirectional(
-                      top: 8,
-                      end: 8,
-                      child: widget.selectionMode
-                          ? Icon(
-                              widget.selected
-                                  ? Icons.check_circle
-                                  : Icons.radio_button_unchecked,
-                              size: 20,
-                              color: widget.selected ? p.cobalt : p.muted,
-                            )
-                          : (file.isEncrypted
-                              ? Container(
-                                  padding: const EdgeInsets.all(4),
-                                  decoration: BoxDecoration(
-                                    color: hasThumb
-                                        ? p.ground.withValues(alpha: 0.88)
-                                        : p.signalSoft,
-                                    borderRadius:
-                                        BorderRadius.circular(VaultRadii.xs),
-                                    border: Border.all(
-                                      color: p.signal.withValues(alpha: 0.45),
-                                    ),
-                                  ),
-                                  child: Icon(Icons.lock,
-                                      size: 11, color: p.signal),
-                                )
-                              : const SizedBox.shrink()),
-                    ),
-                  ],
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: p.scrim,
+                  borderRadius: BorderRadius.circular(VaultRadii.pill),
+                  border: Border.all(color: p.glassBorder),
+                ),
+                child: Text(
+                  ext,
+                  style: VaultText.mono(p, size: 10, color: p.ink),
                 ),
               ),
             ),
-            Container(
-              padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-              decoration: BoxDecoration(
-                border: Border(top: BorderSide(color: p.rule, width: 1)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    file.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: VaultText.body(
-                      p,
-                      widget.isArabic,
-                      size: 13,
-                      weight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        formatBytes(file.size),
-                        style: VaultText.tabular(p, widget.isArabic, size: 11.5),
+            PositionedDirectional(
+              top: 10,
+              end: 10,
+              child: widget.selectionMode
+                  ? _CircularCheck(palette: p, selected: widget.selected)
+                  : Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 7, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: p.scrim,
+                        borderRadius: BorderRadius.circular(VaultRadii.pill),
+                        border: Border.all(color: p.glassBorder),
                       ),
-                      if (widget.locationLabel != null) ...[
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            widget.locationLabel!,
-                            textAlign: TextAlign.end,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: VaultText.body(
-                              p,
-                              widget.isArabic,
-                              size: 11,
-                              color: p.muted,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (file.isEncrypted) ...[
+                            Icon(Icons.lock_outline_rounded,
+                                size: 11, color: p.ink),
+                            const SizedBox(width: 4),
+                          ],
+                          Container(
+                            width: 6,
+                            height: 6,
+                            decoration: BoxDecoration(
+                              color: widget.statusDotColor,
+                              shape: BoxShape.circle,
                             ),
                           ),
+                        ],
+                      ),
+                    ),
+            ),
+
+            // Bottom glass caption overlay with solid scrim for contrast
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                decoration: BoxDecoration(
+                  color: p.scrim,
+                  border:
+                      Border(top: BorderSide(color: p.glassBorder, width: 1)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      file.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: VaultText.body(
+                        p,
+                        widget.isArabic,
+                        size: 13,
+                        weight: FontWeight.w600,
+                        applyArabicScale: false,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          formatBytes(file.size),
+                          style: VaultText.mono(p, size: 10.5),
                         ),
+                        if (widget.locationLabel != null)
+                          Expanded(
+                            child: Text(
+                              widget.locationLabel!,
+                              textAlign: TextAlign.end,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: VaultText.monoText(
+                                p,
+                                widget.locationLabel!,
+                                size: 10,
+                                color: p.champagne,
+                              ),
+                            ),
+                          ),
                       ],
-                    ],
-                  ),
-                ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
@@ -1912,119 +2193,501 @@ class _GridFileCardState extends State<_GridFileCard> {
   }
 }
 
-class _SheetActionItem {
-  final IconData icon;
-  final String title;
-  final String? subtitle;
-  final String? trailingText;
-  final bool isDanger;
-  final bool isActive;
-  final VoidCallback onTap;
-
-  const _SheetActionItem({
-    required this.icon,
-    required this.title,
-    this.subtitle,
-    this.trailingText,
-    this.isDanger = false,
-    this.isActive = false,
-    required this.onTap,
-  });
-}
-
-class _SheetActionList extends StatelessWidget {
+class _BulkActionBtn extends StatelessWidget {
   final AppPalette palette;
   final bool isArabic;
-  final List<_SheetActionItem> items;
+  final IconData icon;
+  final String label;
+  final bool isDanger;
+  final bool enabled;
+  final VoidCallback onTap;
 
-  const _SheetActionList({
+  const _BulkActionBtn({
     required this.palette,
     required this.isArabic,
-    required this.items,
+    required this.icon,
+    required this.label,
+    this.isDanger = false,
+    this.enabled = true,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: palette.surfaceAlt,
-        borderRadius: BorderRadius.circular(VaultRadii.md),
-        border: Border.all(color: palette.rule),
+    final p = palette;
+    final color = !enabled
+        ? p.muted.withValues(alpha: 0.45)
+        : (isDanger ? p.coral : p.champagne);
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: enabled ? onTap : null,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 19, color: color),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: VaultText.body(
+                p,
+                isArabic,
+                size: 11,
+                weight: FontWeight.w600,
+                color: color,
+                applyArabicScale: false,
+              ),
+            ),
+          ],
+        ),
       ),
+    );
+  }
+}
+
+class _MenuGlassTile extends StatelessWidget {
+  final AppPalette palette;
+  final bool isArabic;
+  final IconData icon;
+  final String title;
+  final String? subtitle;
+  final String? trailingText;
+  final Color tone;
+  final VoidCallback onTap;
+
+  const _MenuGlassTile({
+    required this.palette,
+    required this.isArabic,
+    required this.icon,
+    required this.title,
+    this.subtitle,
+    this.trailingText,
+    required this.tone,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final p = palette;
+    return VaultTap(
+      onTap: onTap,
+      child: VaultSurface(
+        palette: p,
+        borderRadius: VaultRadii.md,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: tone.withValues(alpha: 0.14),
+                borderRadius: BorderRadius.circular(VaultRadii.tile),
+              ),
+              alignment: Alignment.center,
+              child: Icon(icon, size: 18, color: tone),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: VaultText.body(
+                      p,
+                      isArabic,
+                      size: 14,
+                      weight: FontWeight.w600,
+                      color: tone == p.coral ? p.coral : p.ink,
+                      applyArabicScale: false,
+                    ),
+                  ),
+                  if (subtitle != null)
+                    Text(
+                      subtitle!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: VaultText.body(
+                        p,
+                        isArabic,
+                        size: 12,
+                        color: p.secondary,
+                        applyArabicScale: false,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            if (trailingText != null)
+              Text(
+                trailingText!,
+                style: VaultText.mono(p, size: 14, color: p.champagne),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TreePickerRow extends StatelessWidget {
+  final AppPalette palette;
+  final bool isArabic;
+  final IconData icon;
+  final String title;
+  final int depth;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _TreePickerRow({
+    required this.palette,
+    required this.isArabic,
+    required this.icon,
+    required this.title,
+    required this.depth,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final p = palette;
+    return Padding(
+      padding: EdgeInsetsDirectional.only(
+        start: (depth * 14.0).clamp(0.0, 56.0),
+        bottom: 6,
+      ),
+      child: VaultTap(
+        onTap: onTap,
+        child: VaultSurface(
+          palette: p,
+          borderRadius: VaultRadii.tile,
+          backgroundColor: selected ? p.champagneSoft : p.glassFill,
+          borderColor: selected ? p.champagne : p.glassBorder,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+          child: Row(
+            children: [
+              Icon(icon,
+                  size: 18, color: selected ? p.champagne : p.secondary),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: VaultText.body(
+                    p,
+                    isArabic,
+                    size: 14,
+                    weight: selected ? FontWeight.w600 : FontWeight.w400,
+                    applyArabicScale: false,
+                  ),
+                ),
+              ),
+              if (selected)
+                Icon(Icons.check_circle_rounded,
+                    size: 18, color: p.signalGreen),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PromptDialogForm extends StatefulWidget {
+  final AppPalette palette;
+  final bool isArabic;
+  final String title;
+  final String initialText;
+  final String? hintText;
+  final String cancelLabel;
+  final String confirmLabel;
+  final bool useSquareConfirm;
+  final ValueChanged<String> onSubmit;
+
+  const _PromptDialogForm({
+    required this.palette,
+    required this.isArabic,
+    required this.title,
+    this.initialText = '',
+    this.hintText,
+    required this.cancelLabel,
+    required this.confirmLabel,
+    this.useSquareConfirm = false,
+    required this.onSubmit,
+  });
+
+  @override
+  State<_PromptDialogForm> createState() => _PromptDialogFormState();
+}
+
+class _PromptDialogFormState extends State<_PromptDialogForm> {
+  late final TextEditingController _ctrl =
+      TextEditingController(text: widget.initialText);
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _handleSubmit() {
+    final value = _ctrl.text.trim();
+    if (value.isNotEmpty) {
+      widget.onSubmit(value);
+    }
+    Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.palette;
+    final isAr = widget.isArabic;
+    return VaultDialogShell(
+      palette: p,
       child: Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          for (var i = 0; i < items.length; i++)
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: items[i].onTap,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-                decoration: BoxDecoration(
-                  color: items[i].isActive ? palette.cobaltSoft : null,
-                  border: i > 0
-                      ? Border(top: BorderSide(color: palette.rule, width: 1))
-                      : null,
+          Text(widget.title, style: VaultText.heading(p, isAr, size: 19)),
+          const SizedBox(height: 14),
+          TextField(
+            controller: _ctrl,
+            autofocus: true,
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => _handleSubmit(),
+            style: VaultText.body(p, isAr, size: 14.5, applyArabicScale: false),
+            decoration: InputDecoration(
+              hintText: widget.hintText,
+              hintStyle: widget.hintText != null
+                  ? VaultText.monoText(p, widget.hintText!,
+                      size: 12, color: p.secondary)
+                  : null,
+              filled: true,
+              fillColor: p.glassFill,
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(VaultRadii.tile),
+                borderSide: BorderSide(color: p.glassBorder),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(VaultRadii.tile),
+                borderSide: BorderSide(color: p.glassBorder),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(VaultRadii.tile),
+                borderSide: BorderSide(color: p.champagne, width: 1.2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              Expanded(
+                child: VaultPillButton(
+                  palette: p,
+                  isArabic: isAr,
+                  variant: VaultPillVariant.secondary,
+                  height: 44,
+                  label: widget.cancelLabel,
+                  onPressed: () => Navigator.pop(context),
                 ),
+              ),
+              const SizedBox(width: 10),
+              if (widget.useSquareConfirm)
+                VaultConfirmSquareButton(
+                  palette: p,
+                  tooltip: widget.confirmLabel,
+                  size: 44,
+                  onTap: _handleSubmit,
+                )
+              else
+                Expanded(
+                  child: VaultPillButton(
+                    palette: p,
+                    isArabic: isAr,
+                    height: 44,
+                    label: widget.confirmLabel,
+                    onPressed: _handleSubmit,
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _VaultDoorPainter extends CustomPainter {
+  final Color strokeColor;
+  final Color mutedColor;
+
+  const _VaultDoorPainter({
+    required this.strokeColor,
+    required this.mutedColor,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final pMain = Paint()
+      ..color = strokeColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    final pSub = Paint()
+      ..color = mutedColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5;
+
+    final rect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(6, 6, size.width - 12, size.height - 12),
+      const Radius.circular(14),
+    );
+    canvas.drawRRect(rect, pMain);
+
+    final center = Offset(size.width / 2, size.height / 2);
+    canvas.drawCircle(center, size.width * 0.22, pSub);
+    canvas.drawCircle(center, size.width * 0.11, pMain);
+
+    // 4 subtle lock spokes
+    for (final offset in const [
+      Offset(0, -14),
+      Offset(0, 14),
+      Offset(-14, 0),
+      Offset(14, 0),
+    ]) {
+      canvas.drawLine(
+        center + offset * 0.55,
+        center + offset,
+        pMain,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_VaultDoorPainter oldDelegate) =>
+      oldDelegate.strokeColor != strokeColor ||
+      oldDelegate.mutedColor != mutedColor;
+}
+
+class _GlassSkeletonList extends StatefulWidget {
+  final AppPalette palette;
+  const _GlassSkeletonList({required this.palette});
+
+  @override
+  State<_GlassSkeletonList> createState() => _GlassSkeletonListState();
+}
+
+class _GlassSkeletonListState extends State<_GlassSkeletonList>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _shimmerCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _shimmerCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !MediaQuery.disableAnimationsOf(context)) {
+        _shimmerCtrl.repeat(reverse: true);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _shimmerCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.palette;
+    return AnimatedBuilder(
+      animation: _shimmerCtrl,
+      builder: (context, _) {
+        final alpha = 0.25 + (_shimmerCtrl.value * 0.35);
+        return Column(
+          children: List.generate(4, (i) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: VaultSurface(
+                palette: p,
+                borderRadius: VaultRadii.md,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
                 child: Row(
                   children: [
-                    Icon(
-                      items[i].icon,
-                      size: 19,
-                      color: items[i].isDanger
-                          ? palette.danger
-                          : (items[i].isActive ? palette.cobalt : palette.ink),
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: p.secondary.withValues(alpha: alpha * 0.45),
+                        borderRadius: BorderRadius.circular(VaultRadii.tile),
+                      ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            items[i].title,
-                            style: VaultText.body(
-                              palette,
-                              isArabic,
-                              size: 14,
-                              weight: FontWeight.w600,
-                              color: items[i].isDanger
-                                  ? palette.danger
-                                  : (items[i].isActive
-                                      ? palette.cobalt
-                                      : palette.ink),
-                            ),
-                          ),
-                          if (items[i].subtitle != null)
-                            Text(
-                              items[i].subtitle!,
-                              style: VaultText.body(
-                                palette,
-                                isArabic,
-                                size: 12,
-                                color: palette.muted,
+                          FractionallySizedBox(
+                            widthFactor: i.isEven ? 0.68 : 0.52,
+                            child: Container(
+                              height: 12,
+                              decoration: BoxDecoration(
+                                color: p.secondary.withValues(alpha: alpha * 0.5),
+                                borderRadius:
+                                    BorderRadius.circular(VaultRadii.pill),
                               ),
                             ),
+                          ),
+                          const SizedBox(height: 8),
+                          FractionallySizedBox(
+                            widthFactor: 0.36,
+                            child: Container(
+                              height: 9,
+                              decoration: BoxDecoration(
+                                color: p.secondary.withValues(alpha: alpha * 0.3),
+                                borderRadius:
+                                    BorderRadius.circular(VaultRadii.pill),
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                     ),
-                    if (items[i].trailingText != null)
-                      Text(
-                        items[i].trailingText!,
-                        style: VaultText.body(
-                          palette,
-                          isArabic,
-                          size: 14,
-                          weight: FontWeight.w700,
-                          color: palette.cobalt,
-                        ),
-                      ),
                   ],
                 ),
               ),
-            ),
-        ],
-      ),
+            );
+          }),
+        );
+      },
     );
   }
+}
+
+String _fileExtensionTag(FileRecord file) {
+  final dot = file.name.lastIndexOf('.');
+  if (dot >= 0 && dot < file.name.length - 1) {
+    final ext = file.name.substring(dot + 1).toUpperCase();
+    if (ext.length <= 4) return ext;
+  }
+  if (isImageFile(file.mimeType, file.name)) return 'IMG';
+  if (isPdfFile(file.mimeType, file.name)) return 'PDF';
+  if (isVideoFile(file.mimeType, file.name)) return 'VID';
+  if (isAudioFile(file.mimeType, file.name)) return 'AUD';
+  return 'FILE';
 }

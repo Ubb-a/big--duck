@@ -3,33 +3,39 @@ class AppStrings {
   const AppStrings(this.ar);
 
   String get appTitle => 'BIG DUCK';
-  String get vaultSealLabel => ar ? 'خزنة مشفرة' : 'Encrypted vault';
+  String get signalVaultSubtitle => 'SIGNAL VAULT';
+  String get vaultSealLabel => ar ? 'خزنة مشفرة بصفر معرفة' : 'Zero-knowledge vault';
   String get previewUi => ar ? 'معاينة الواجهة' : 'Preview UI';
 
-  // Tabs
-  String get tabFiles => ar ? 'الملفات' : 'Files';
-  String get tabRecent => ar ? 'الأخيرة' : 'Recent';
+  // Floating Bottom Nav Tabs (Files · Transfers · Preview/Recent · Settings)
+  String get tabFiles => ar ? 'الخزنة' : 'Files';
   String get tabTransfers => ar ? 'التحويلات' : 'Transfers';
+  String get tabRecent => ar ? 'الأخيرة' : 'Preview';
   String get tabSettings => ar ? 'الإعدادات' : 'Settings';
 
   // Files screen
+  String get filesTitle => ar ? 'الخزنة' : 'Vault';
   String get recentTitle => ar ? 'الأخيرة' : 'Recent';
   String get upload => ar ? 'رفع' : 'Upload';
+  String get uploadFileAction => ar ? 'رفع ملف' : 'Upload file';
   String get searchHint =>
-      ar ? 'ابحث في الخزنة المشفرة' : 'Search encrypted vault';
+      ar ? 'ابحث في جميع المجلدات...' : 'Search all vault folders...';
   String get myFiles => ar ? 'ملفاتي' : 'My files';
   String get folderWord => ar ? 'مجلد' : 'Folder';
   String foldersAndFiles(int folders, int files) =>
-      ar ? '$folders مجلد، $files ملف' : '$folders folders, $files files';
-  String get folderEmpty => ar ? 'المجلد فارغ' : 'This folder is empty';
+      ar ? '$folders مجلد · $files ملف' : '$folders folders · $files files';
+  String get folderEmpty => ar ? 'الخزنة فارغة' : 'Your vault is empty';
   String get noMatching => ar ? 'لا توجد نتائج' : 'No matching items';
   String get emptyDesc => ar
-      ? 'اضغط على رفع لتشفير وحفظ المستندات والصور أو الفيديو.'
-      : 'Use Upload to encrypt and store documents, photos, or video.';
+      ? 'تُقسَّم ملفاتك وتُشفَّر على جهازك قبل مغادرة أي بيانات.'
+      : 'Files are split and encrypted on your device before anything leaves.';
   String nothingMatched(String q) =>
-      ar ? 'لا توجد نتائج مطابقة لـ "$q"' : 'No items match "$q"';
+      ar ? 'لا توجد ملفات مطابقة لـ "$q"' : 'No items match "$q"';
+  String get ownedByMeChip => ar ? 'مملوكة لي' : 'Owned by me';
+  String get adminChip => ar ? 'مشرف' : 'Admin';
 
   // Filters & Sort
+  String get filterTitle => ar ? 'تصفية' : 'Filter';
   String get filterAll => ar ? 'الكل' : 'All';
   String get filterFolders => ar ? 'مجلدات' : 'Folders';
   String get filterImages => ar ? 'صور' : 'Images';
@@ -37,14 +43,13 @@ class AppStrings {
   String get filterVideo => ar ? 'فيديو' : 'Video';
   String get filterOther => ar ? 'أخرى' : 'Other';
 
-  String get sortByTitle => ar ? 'الترتيب حسب' : 'Sort by';
+  String get sortByTitle => ar ? 'ترتيب حسب' : 'Sort by';
   String get sortDate => ar ? 'التاريخ' : 'Date';
   String get sortName => ar ? 'الاسم' : 'Name';
   String get sortSize => ar ? 'الحجم' : 'Size';
 
   // Multi-select
-  String selectedCount(int count) =>
-      ar ? 'تم تحديد $count' : '$count selected';
+  String selectedCount(int count) => ar ? '$count محددة' : '$count selected';
   String get selectAll => ar ? 'تحديد الكل' : 'Select all';
   String get clearSelection => ar ? 'إلغاء' : 'Cancel';
   String get moveAction => ar ? 'نقل' : 'Move';
@@ -54,186 +59,239 @@ class AppStrings {
 
   // Move modal
   String get moveToTitle => ar ? 'نقل إلى مجلد' : 'Move to folder';
+  String get moveHereCta => ar ? 'انقل هنا' : 'Move here';
   String get rootFolderLabel =>
-      ar ? 'ملفاتي (الرئيسية)' : 'My files (root)';
+      ar ? 'الخزنة الرئيسية' : 'Vault root';
 
-  // Inspectors & Upload
-  String get encryptAndUpload => ar ? 'تشفير ورفع' : 'Encrypt and upload';
+  // Delete confirmation dialog
+  String get deleteConfirmTitle => ar ? 'تأكيد الحذف' : 'Confirm deletion';
+  String deleteConfirmDesc(int count) => ar
+      ? 'سيتم حذف $count عنصر من فهرس الخزنة نهائياً.'
+      : 'Delete $count selected item(s) permanently from your vault index?';
+
+  // Upload sheet & inspectors
+  String get encryptAndUpload => ar ? 'رفع إلى الخزنة' : 'Upload to Vault';
   String get uploadDesc => ar
-      ? 'تُقسَّم الملفات وتُشفَّر محلياً بـ AES-256-GCM قبل الرفع.'
-      : 'Files are split and AES-256-GCM encrypted on this device before upload.';
-  String get uploadDocs => ar ? 'رفع مستندات' : 'Upload documents';
-  String get uploadDocsSub => ar
-      ? 'ملفات PDF أو أرشيف أو أي ملف'
-      : 'PDFs, archives, or any file';
-  String get uploadMedia => ar ? 'رفع صور وفيديو' : 'Upload photos and video';
+      ? 'تُشفَّر الملفات بـ Argon2id + AES-256-GCM قبل مغادرتها جهازك.'
+      : 'Encrypted with Argon2id + AES-256-GCM on your device before upload.';
+  String get chooseFilesLabel => ar ? 'اختر الملفات' : 'Choose files';
+  String get uploadDocs => ar ? 'مستندات وملفات' : 'Documents & archives';
+  String get uploadDocsSub =>
+      ar ? 'PDF أو مضغوط أو أي نوع ملف' : 'PDFs, archives, or any file';
+  String get uploadMedia => ar ? 'صور وفيديو' : 'Photos & video';
   String get uploadMediaSub =>
-      ar ? 'اختر من معرض الصور' : 'Select from your camera roll';
+      ar ? 'من مكتبة الصور بالكامل' : 'Select from your library';
+  String get destinationFolderLabel =>
+      ar ? 'المجلد الوجهة' : 'Destination folder';
+  String get encryptBeforeUpload =>
+      ar ? 'تشفير قبل الرفع' : 'Encrypt before upload';
   String get newFolder => ar ? 'مجلد جديد' : 'New folder';
   String get folderNameHint => ar ? 'اسم المجلد' : 'Folder name';
   String get cancel => ar ? 'إلغاء' : 'Cancel';
-  String get create => ar ? 'إنشاء' : 'Create folder';
-  String get save => ar ? 'حفظ التغييرات' : 'Save changes';
+  String get create => ar ? 'إنشاء' : 'Create';
+  String get save => ar ? 'حفظ' : 'Save';
 
   String get openFolder => ar ? 'فتح المجلد' : 'Open folder';
   String get renameFolder => ar ? 'إعادة تسمية المجلد' : 'Rename folder';
   String get moveFolder => ar ? 'نقل المجلد' : 'Move folder';
   String get deleteFolder => ar ? 'حذف المجلد' : 'Delete folder';
 
+  String get previewFileAction => ar ? 'معاينة' : 'Preview';
   String get previewPdf => ar ? 'معاينة PDF' : 'Preview PDF';
   String get previewImage => ar ? 'معاينة الصورة' : 'Preview image';
+  String get previewVideo => ar ? 'تشغيل الفيديو' : 'Play video';
+  String get previewAudio => ar ? 'تشغيل الصوت' : 'Play audio';
   String get downloadAndDecrypt =>
-      ar ? 'تنزيل وفك التشفير' : 'Download and decrypt';
+      ar ? 'تنزيل وفك التشفير' : 'Download & decrypt';
   String get renameFile => ar ? 'إعادة تسمية الملف' : 'Rename file';
   String get moveFile => ar ? 'نقل الملف' : 'Move file';
   String get deleteFile => ar ? 'حذف الملف' : 'Delete file';
 
+  // Preview Darkroom
+  String get decryptingMono => ar ? 'جاري فك التشفير...' : 'Decrypting...';
+  String get infoLabel => ar ? 'التفاصيل' : 'Info';
+  String get shareLabel => ar ? 'مشاركة' : 'Share';
+  String get chunkCountLabel => ar ? 'عدد الأجزاء' : 'Chunks';
+  String get encryptionStatusLabel => ar ? 'حالة التشفير' : 'Encryption';
+  String get aesVerifiedLabel => 'AES-256-GCM';
+  String get uploadDateLabel => ar ? 'تاريخ الرفع' : 'Upload date';
+
   // Transfers
   String get transfersTitle => ar ? 'التحويلات' : 'Transfers';
   String get transfersSub => ar
-      ? 'الرفع والتنزيل المشفر عبر تليجرام'
-      : 'Encrypted uploads and downloads over Telegram';
-  String get noTransfers => ar ? 'لا توجد تحويلات نشطة' : 'No active transfers';
+      ? 'طابور التشفير والنقل المباشر عبر تيليجرام'
+      : 'Encrypted MTProto transfer queue';
+  String get segmentActive => ar ? 'نشط' : 'Active';
+  String get segmentCompleted => ar ? 'مكتمل' : 'Completed';
+  String get segmentFailed => ar ? 'فشل' : 'Failed';
+  String get noTransfers => ar ? 'لا توجد تحويلات' : 'Queue is clear';
   String get noTransfersDesc => ar
-      ? 'ستظهر هنا الملفات التي ترفعها أو تنزلها مع نسبة التقدم.'
-      : 'Uploaded and downloaded files appear here with live progress.';
+      ? 'ستظهر هنا الملفات قيد التشفير أو الرفع أو التنزيل بهدوء.'
+      : 'Active uploads, paused items, and completed decryptions appear here.';
+  String chunkProgressLabel(int current, int total) =>
+      ar ? 'جزء $current من $total' : 'chunk $current of $total';
+  String floodWaitMessage(int seconds) => ar
+      ? 'طلب تيليجرام الانتظار $secondsث'
+      : 'Telegram asked us to wait ${seconds}s';
+  String get retryAction => ar ? 'إعادة المحاولة' : 'Retry';
+  String get pauseAction => ar ? 'إيقاف مؤقت' : 'Pause';
+  String get resumeAction => ar ? 'استكمال' : 'Resume';
+  String get uploadLabel => ar ? 'رفع' : 'Upload';
+  String get downloadLabel => ar ? 'تنزيل' : 'Download';
 
-  // Settings
+  // Settings sections (mono small caps headlines)
   String get settingsTitle => ar ? 'الإعدادات' : 'Settings';
   String get settingsSub =>
-      ar ? 'المظهر والتشفير وإدارة الخزنة' : 'Vault controls and preferences';
-  String get appearanceTitle => ar ? 'المظهر واللغة' : 'Appearance and language';
-  String get themeSystem => ar ? 'تلقائي' : 'System';
+      ar ? 'تفضيلات الخزنة والأمان' : 'Vault security, storage, and appearance';
+  String get sectionAccountSecurity =>
+      ar ? 'الحساب والأمان' : 'Account & Security';
+  String get sectionStorageDest =>
+      ar ? 'وجهة التخزين' : 'Storage Destination';
+  String get sectionEncryption => ar ? 'التشفير' : 'Encryption';
+  String get sectionBackup => ar ? 'النسخ الاحتياطي' : 'Backup';
+  String get sectionAppearanceLang =>
+      ar ? 'المظهر واللغة' : 'Appearance & Language';
+  String get sectionAbout => ar ? 'حول التطبيق' : 'About';
+
+  String get appearanceTitle => ar ? 'المظهر' : 'Theme';
+  String get languageLabel => ar ? 'اللغة' : 'Language';
   String get themeLight => ar ? 'فاتح' : 'Light';
   String get themeDark => ar ? 'داكن' : 'Dark';
-  String get storageStatsTitle =>
-      ar ? 'إحصائيات المساحة' : 'Vault storage';
+  String get themeSystem => ar ? 'تلقائي' : 'Auto';
+
+  String get autoLockTitle => ar ? 'مهلة القفل التلقائي' : 'Auto-lock timeout';
+  String autoLockOptionLabel(int minutes) => switch (minutes) {
+        0 => ar ? 'فوري' : 'Now',
+        1 => ar ? '1 د' : '1m',
+        5 => ar ? '5 د' : '5m',
+        _ => ar ? '15 د' : '15m',
+      };
+
   String get cacheTitle => ar ? 'الكاش المحلي للتنزيلات' : 'Local download cache';
   String get clearCache => ar ? 'مسح الكاش' : 'Clear cache';
   String get refresh => ar ? 'تحديث' : 'Refresh';
-  String get storageDestination =>
-      ar ? 'وجهة التخزين' : 'Storage destination';
-  String get loadGroups => ar ? 'تحميل المجموعات' : 'Load groups';
+  String get storageDestination => ar ? 'وجهة التخزين' : 'Storage destination';
   String get savedMessagesDefault =>
-      ar ? 'الرسائل المحفوظة (افتراضي)' : 'Saved Messages (default)';
-  String get uploadChunkSize => ar ? 'حجم جزء الرفع' : 'Upload chunk size';
-  String get encryptionTitle =>
-      ar ? 'تشفير AES-256-GCM' : 'AES-256-GCM encryption';
+      ar ? 'الرسائل المحفوظة' : 'Saved Messages';
+  String get uploadChunkSize => ar ? 'حجم الجزء' : 'Chunk size';
+  String get encryptionTitle => ar ? 'كلمة مرور الخزنة' : 'Vault password';
+  String get encryptionAlgoRow => 'Argon2id + AES-256-GCM';
   String get encryptionSub => ar
-      ? 'تُشفّر الملفات بـ Argon2id + AES-256-GCM قبل مغادرة جهازك.'
-      : 'Files are encrypted with Argon2id + AES-256-GCM before leaving this device.';
+      ? 'تُشفَّر كل الأجزاء على جهازك قبل إرسالها إلى تيليجرام.'
+      : 'Zero-knowledge client encryption before chunks leave your device.';
   String get encPassHint =>
-      ar ? 'كلمة مرور تشفير الخزنة' : 'Vault encryption password';
-  String get applyPassword => ar ? 'تطبيق كلمة المرور' : 'Apply password';
-  String get clear => ar ? 'مسح' : 'Clear';
+      ar ? 'أدخل كلمة مرور الخزنة' : 'Enter vault encryption password';
+  String get applyPassword => ar ? 'حفظ المفتاح' : 'Apply key';
+  String get clear => ar ? 'إيقاف' : 'Disable';
   String get backupRestoreTitle =>
-      ar ? 'النسخ الاحتياطي واستعادة الفهرس' : 'Index backup and restore';
+      ar ? 'الفهرس المشفّر' : 'Encrypted index';
   String get backupPassHint =>
       ar ? 'كلمة مرور النسخة الاحتياطية' : 'Backup password';
   String get msgIdHint =>
-      ar ? 'رقم الرسالة (اختياري للاستعادة)' : 'Message ID (optional for restore)';
-  String get backupIndex => ar ? 'نسخ الفهرس' : 'Backup index';
+      ar ? 'رقم الرسالة (اختياري)' : 'Message ID (optional)';
+  String get backupIndex => ar ? 'نسخ الفهرس المشفر' : 'Back up encrypted index';
   String get restoreIndex => ar ? 'استعادة الفهرس' : 'Restore index';
-  String get exitPreview => ar
-      ? 'الخروج من وضع المعاينة (العودة لتسجيل الدخول)'
-      : 'Exit preview mode';
+  String get lastBackupLabel => ar ? 'آخر نسخة' : 'Last backup';
+  String get neverLabel => ar ? 'لم يتم بعد' : 'Never';
+  String get exitPreview => ar ? 'الخروج من المعاينة' : 'Exit preview';
 
   // Biometric lock & Security
-  String get securityTitle => ar ? 'الأمان وقفل الخزنة' : 'Vault lock & security';
   String get biometricLockTitle =>
-      ar ? 'القفل بالبصمة أو الوجه' : 'Biometric / Face ID lock';
+      ar ? 'القفل بالبصمة / Face ID' : 'Biometric / Face ID lock';
   String get biometricLockSub => ar
-      ? 'اطلب المصادقة عند فتح التطبيق أو العودة من الخلفية.'
-      : 'Require biometric unlock when opening or returning to the vault.';
+      ? 'تأمين الوصول للخزنة عند فتح التطبيق'
+      : 'Require device biometrics to open the vault';
   String get biometricUnavailable => ar
-      ? 'المصادقة الحيوية غير مهيأة على هذا الجهاز.'
-      : 'Biometric authentication is not set up on this device.';
-  String get vaultLockedTitle => ar ? 'الخزنة مقفلة' : 'Vault locked';
+      ? 'المصادقة الحيوية غير مفعلة على الجهاز.'
+      : 'Biometrics are not enrolled on this device.';
+  String get vaultLockedHeadline => ar ? 'افتح خزنتك' : 'Unlock your vault';
   String get vaultLockedSub => ar
-      ? 'أكّد هويتك للوصول إلى ملفاتك المشفّرة.'
-      : 'Verify your identity to access encrypted files.';
-  String get unlockVault => ar ? 'فتح بالبصمة' : 'Unlock vault';
+      ? 'أكّد هويتك لفك تشفير الفهرس المحلي'
+      : 'Verify biometrics to unlock local keys';
+  String get usePasscodeCta => ar ? 'استخدم رمز المرور' : 'Use passcode';
+  String get tryAgainText => ar ? 'حاول مرة أخرى' : 'Try again';
+  String get unlockVault => ar ? 'افتح خزنتك' : 'Unlock vault';
 
-  // Global search, media preview & transfer controls
+  // Search & share
   String searchResultsLabel(int count) =>
-      ar ? 'نتائج البحث الشامل ($count)' : 'Vault search results ($count)';
-  String get pauseAction => ar ? 'إيقاف مؤقت' : 'Pause';
-  String get resumeAction => ar ? 'استكمال' : 'Resume';
-  String get previewVideo => ar ? 'تشغيل الفيديو' : 'Play video';
-  String get previewAudio => ar ? 'تشغيل الصوت' : 'Play audio';
+      ar ? 'نتائج البحث ($count)' : 'Search results ($count)';
+  String get shareSaveTitle => ar ? 'احفظ في الخزنة' : 'Save to Vault';
+  String get shareSaveSub => ar
+      ? 'سيتم تشفير الملفات المحددة ورفعها لوجهتك المختارة.'
+      : 'Selected files will be encrypted and queued for your vault.';
+  String get shareSaveCta => ar ? 'حفظ' : 'Save';
 
   // Auth screen
-  String get authStepMountTitle =>
-      ar ? 'اربط خزنة تيليجرام' : 'Mount your Telegram vault';
+  String get authConnectTitle => ar ? 'ربط تيليجرام' : 'Connect Telegram';
   String get authStepMountSub => ar
-      ? 'تُقسَّم الملفات وتُشفَّر محلياً بـ AES-256-GCM قبل رفعها.'
-      : 'Files are split and AES-256-GCM encrypted locally before upload.';
+      ? 'أدخل بيانات المطور لتأسيس جلسة MTProto آمنة.'
+      : 'Enter Telegram API credentials to establish an encrypted session.';
   String get authStepConnectTitle =>
-      ar ? 'جاري الاتصال بتيليجرام' : 'Connecting to Telegram';
+      ar ? 'جاري إنشاء الجلسة...' : 'Establishing session...';
   String get authStepConnectSub => ar
-      ? 'تأسيس جلسة MTProto مشفرة.'
-      : 'Establishing encrypted MTProto session.';
-  String get authStepPhoneTitle =>
-      ar ? 'أكّد رقم هاتفك' : 'Verify your phone number';
+      ? 'اتصال مشفّر مباشرة بخوادم تيليجرام.'
+      : 'Connecting directly over MTProto.';
+  String get authStepPhoneTitle => ar ? 'رقم الهاتف' : 'Phone number';
   String get authStepPhoneSub => ar
-      ? 'سيرسل تيليجرام رمز دخول لمرة واحدة إلى جلستك النشطة.'
-      : 'Telegram will send a one-time login code to your active session.';
-  String get authStepCodeTitle =>
-      ar ? 'أدخل رمز التحقق' : 'Enter the login code';
+      ? 'اختر رمز الدولة وأدخل رقمك المرتبط بتيليجرام.'
+      : 'Select country code and enter your Telegram phone number.';
+  String get authStepCodeTitle => ar ? 'رمز التحقق' : 'Verification code';
   String authStepCodeSub(String? phone) => phone != null && phone.isNotEmpty
-      ? (ar ? 'تم إرسال الرمز إلى $phone' : 'Code sent to $phone')
+      ? (ar ? 'أدخل الرمز المرسل إلى $phone' : 'Enter the code sent to $phone')
       : (ar
-          ? 'تحقق من رسالة تيليجرام للحصول على الرمز المكون من 5 أرقام.'
-          : 'Check your active Telegram session for the 5-digit code.');
+          ? 'أدخل الرمز المرسل داخل تطبيق تيليجرام.'
+          : 'Enter the login code sent to your Telegram session.');
   String get authStepPassTitle =>
-      ar ? 'التحقق بخطوتين (2FA)' : 'Unlock with 2FA password';
+      ar ? 'التحقق بخطوتين (2FA)' : '2FA password';
   String authStepPassSub(String? hint) => hint != null && hint.isNotEmpty
-      ? (ar ? 'تلميح كلمة المرور: $hint' : 'Password hint: $hint')
+      ? (ar ? 'التلميح: $hint' : 'Hint: $hint')
       : (ar
-          ? 'التحقق بخطوتين مفعّل على حساب تيليجرام هذا.'
-          : 'Two-step verification is enabled on this Telegram account.');
+          ? 'أدخل كلمة مرور التحقق بخطوتين الخاصة بحسابك.'
+          : 'Enter your Telegram cloud password.');
+  String get authFooterEncrypted => ar
+      ? 'التشفير يتم على جهازك قبل ما أي شيء يغادره'
+      : 'Encrypted on your device before anything leaves it';
   String get apiIdLabel => 'API ID';
-  String get apiIdHint =>
-      ar ? 'الرقم التعريفي من my.telegram.org' : 'Numeric ID from my.telegram.org';
-  String get apiHashLabel => 'API hash';
+  String get apiIdHint => '12345678';
+  String get apiHashLabel => 'API HASH';
   String get apiHashHint =>
-      ar ? 'مفتاح من 32 حرفاً' : '32-character hex string';
+      ar ? 'مفتاح من 32 خانة' : '32-character hex string';
   String get apiCredsHelper => ar
-      ? 'احصل على API ID و API Hash من my.telegram.org'
-      : 'Get your API ID & hash at my.telegram.org';
-  String get phoneLabel => ar ? 'الهاتف' : 'Phone';
-  String get phoneHint => '+20 100 000 0000';
-  String get codeLabel => ar ? 'الرمز' : 'Code';
-  String get codeHint =>
-      ar ? 'رمز من 5 أرقام' : '5-digit login code';
+      ? 'احصل عليها من my.telegram.org'
+      : 'Get them from my.telegram.org';
+  String get phoneLabel => ar ? 'رقم الهاتف' : 'Phone';
+  String get phoneHint => '100 000 0000';
+  String get codeLabel => ar ? 'رمز التحقق' : 'Code';
+  String get resendReadyLabel => ar ? 'إعادة إرسال الرمز' : 'Resend code';
+  String resendCountdownLabel(int sec) {
+    final s = sec.toString().padLeft(2, '0');
+    return ar ? 'إعادة الإرسال 00:$s' : 'Resend in 00:$s';
+  }
+
   String get passwordLabel => ar ? 'كلمة المرور' : 'Password';
   String get passwordHint =>
-      ar ? 'كلمة مرور التحقق بخطوتين' : '2FA vault password';
-  String get continueCta => ar ? 'متابعة' : 'Continue';
-  String get connectingCta => ar ? 'جاري الاتصال...' : 'Connecting...';
-  String get sendCodeCta => ar ? 'إرسال الرمز' : 'Send code';
-  String get verifyCodeCta => ar ? 'تحقق من الرمز' : 'Verify code';
+      ar ? 'كلمة مرور الحساب' : '2FA password';
+  String get continueCta => ar ? 'التالي' : 'Continue';
+  String get connectingCta => ar ? 'جاري الربط...' : 'Connecting...';
+  String get sendCodeCta => ar ? 'التالي' : 'Send code';
+  String get verifyCodeCta => ar ? 'التالي' : 'Verify code';
   String get changePhoneOrKeys =>
-      ar ? 'تغيير الرقم أو مفاتيح API' : 'Change phone or API keys';
-  String get nativeCoreReady => ar ? 'محرك Rust نشط' : 'Rust core ready';
+      ar ? 'تغيير الرقم أو بيانات API' : 'Change phone or API credentials';
+  String get nativeCoreReady => ar ? 'نواة Rust نشطة' : 'Rust core active';
 
-  // Account, Connection & Redesign Headers
-  String get statusSynced => ar ? 'متصل' : 'Synced';
+  // Status & Logout
+  String get statusSynced => ar ? 'متصل ومزامن' : 'Synced';
   String get statusConnecting => ar ? 'جاري الاتصال...' : 'Connecting...';
   String get statusOfflineTap =>
-      ar ? 'غير متصل، اضغط للاتصال' : 'Offline, tap to reconnect';
-  String get accountSectionTitle =>
-      ar ? 'الحساب والأمان' : 'Account and security';
-  String get displayAndStorageTitle =>
-      ar ? 'العرض والتخزين' : 'Display and storage';
-  String get signOut => ar ? 'تسجيل الخروج' : 'Sign out';
-  String get signOutSub => ar
-      ? 'فصل جلسة تيليجرام المحفوظة من هذا الجهاز'
-      : 'Disconnect saved Telegram session on this device';
-  String get keyActiveBadge => ar ? 'المفتاح مفعّل' : 'Key active';
-  String get keyUnsetBadge => ar ? 'بدون تشفير' : 'Unencrypted';
-  String get uploadLabel => ar ? 'رفع' : 'Upload';
-  String get downloadLabel => ar ? 'تنزيل' : 'Download';
+      ar ? 'غير متصل · اضغط للربط' : 'Offline · tap to connect';
+  String get logOut => ar ? 'تسجيل الخروج' : 'Log out';
+  String get logOutConfirmTitle =>
+      ar ? 'تسجيل الخروج من تيليجرام؟' : 'Log out of Telegram?';
+  String get logOutConfirmDesc => ar
+      ? 'سيتم إنهاء الجلسة المحفوظة على هذا الجهاز وإغلاق الخزنة.'
+      : 'Your saved Telegram session on this device will be disconnected.';
+  String get keyActiveBadge => ar ? 'مفعّل' : 'Active';
+  String get keyUnsetBadge => ar ? 'معطّل' : 'Off';
   String activeCountLabel(int n) => ar ? '$n نشط' : '$n active';
   String pausedCountLabel(int n) => ar ? '$n متوقف' : '$n paused';
   String completedCountLabel(int n) => ar ? '$n مكتمل' : '$n done';
@@ -246,9 +304,9 @@ class AppStrings {
       : 'Enter a valid numeric API ID and API Hash.';
   String get nativeLibUnavailable => ar
       ? 'مكتبة Rust غير متوفرة في هذا البناء. استخدم معاينة الواجهة.'
-      : 'Native Rust core library is not loaded on this build. Use Preview UI to explore.';
+      : 'Native Rust core is unavailable in this build. Use Preview UI.';
   String get previewUiActivated =>
-      ar ? 'تم تفعيل وضع المعاينة' : 'Preview UI active (demo mode)';
+      ar ? 'تم تفعيل وضع المعاينة' : 'Preview UI activated';
   String createdFolderToast(String name) =>
       ar ? 'تم إنشاء المجلد "$name"' : 'Created folder "$name"';
   String renamedToToast(String name) =>
@@ -264,63 +322,66 @@ class AppStrings {
       ar ? 'تم حذف $count عنصر' : 'Deleted $count item(s)';
   String queuedUploadToast(int count) => ar
       ? 'تمت إضافة $count ملف للتشفير والرفع'
-      : 'Queued $count file(s) for encrypted upload';
+      : 'Queued $count file(s) for upload';
   String downloadingToast(String name) =>
       ar ? 'جاري تنزيل "$name"...' : 'Downloading "$name"...';
   String demoDownloadToast(String name) => ar
       ? 'وضع المعاينة: تم محاكاة تنزيل "$name"'
       : 'Demo mode: "$name" download simulated';
   String get loadedGroupsToast =>
-      ar ? 'تم تحميل مجموعات تيليجرام' : 'Loaded Telegram groups';
+      ar ? 'تم تحديث الوجهات' : 'Loaded Telegram destinations';
   String storageChangedToast(bool toSavedMessages) => toSavedMessages
-      ? (ar ? 'الوجهة: الرسائل المحفوظة' : 'Storage set to Saved Messages')
-      : (ar ? 'الوجهة: المجموعة المحددة' : 'Storage set to Group');
+      ? (ar ? 'الوجهة: الرسائل المحفوظة' : 'Destination: Saved Messages')
+      : (ar ? 'الوجهة: المجموعة المحددة' : 'Destination updated');
   String storageSetToChatToast(String name) =>
-      ar ? 'تم تعيين الوجهة: $name' : 'Storage set to "$name"';
+      ar ? 'الوجهة: $name' : 'Destination: "$name"';
   String vaultCreatedToast(String name) => ar
-      ? 'تم إنشاء "$name" وتعيينها كوجهة للتخزين'
-      : 'Created "$name" and set as storage destination';
+      ? 'تم إنشاء "$name" وتعيينها وجهة للخزنة'
+      : 'Created "$name" as vault destination';
 
   // Filtered Storage Destination & Vault Creation
   String get storageDestSub => ar
-      ? 'يعرض فقط الجروبات والقنوات الخاصة بك أو التي تملك صلاحية النشر فيها'
-      : 'Only groups and channels you own or can post to are listed';
+      ? 'يظهر فقط ما تملكه أو تملك فيه صلاحية النشر كمشرف'
+      : 'Only groups and channels you own or administer are listed';
   String get changeDestination => ar ? 'تغيير' : 'Change';
   String get searchVaultChatsHint =>
-      ar ? 'ابحث عن جروب أو قناة...' : 'Search owned groups or channels';
-  String get filterOwnedByMe => ar ? 'أنشأتها بنفسي' : 'Owned by me';
-  String get filterAdminAccess => ar ? 'صلاحية مشرف' : 'Admin access';
+      ar ? 'ابحث في المجموعات والقنوات...' : 'Search owned chats...';
+  String get filterOwnedByMe => ar ? 'مملوكة لي' : 'Owned by me';
+  String get filterAdminAccess => ar ? 'مشرف' : 'Admin';
   String get roleOwnerBadge => ar ? 'المالك' : 'Owner';
   String get roleAdminBadge => ar ? 'مشرف' : 'Admin';
   String get privateBadge => ar ? 'خاص' : 'Private';
-  String get groupKindLabel => ar ? 'جروب' : 'Group';
+  String get groupKindLabel => ar ? 'مجموعة' : 'Group';
   String get channelKindLabel => ar ? 'قناة' : 'Channel';
   String membersCountLabel(int n) => ar ? '$n عضو' : '$n members';
   String get newPrivateVaultBtn =>
-      ar ? 'إنشاء خزنة خاصة جديدة' : 'New private vault';
+      ar ? 'إنشاء مجموعة خزنة خاصة' : 'Create private vault group';
   String get newVaultNameHint => ar
-      ? 'اسم جروب أو قناة الخزنة (مثلاً: خزنة الملفات)'
-      : 'Vault name (e.g. BIG DUCK Vault)';
-  String get privateGroupOption => ar ? 'جروب خاص' : 'Private group';
+      ? 'اسم مجموعة الخزنة (مثلاً: خزنة الملفات)'
+      : 'Vault name (e.g. Private Vault)';
+  String get privateGroupOption => ar ? 'مجموعة خاصة' : 'Private group';
   String get privateChannelOption => ar ? 'قناة خاصة' : 'Private channel';
   String get createAndSelectVault =>
-      ar ? 'إنشاء وتعيين كوجهة' : 'Create and select';
+      ar ? 'إنشاء وتعيين' : 'Create & select';
   String get creatingVaultLabel => ar ? 'جاري الإنشاء...' : 'Creating...';
   String get noOwnedChatsFound => ar
-      ? 'لا توجد جروبات مطابقة. يمكنك إنشاء خزنة خاصة جديدة بضغطة واحدة أعلاه.'
-      : 'No matching groups found. Create a dedicated private vault above.';
+      ? 'لا توجد وجهات مطابقة. أنشئ مجموعة خزنة خاصة بالأسفل.'
+      : 'No matching chats. Create a private vault group below.';
   String chunkSizeSetToast(int mib) => ar
-      ? 'تم ضبط حجم الجزء على $mib ميجابايت'
+      ? 'تم ضبط حجم الجزء على $mib MiB'
       : 'Chunk size set to $mib MiB';
   String encryptionUpdatedToast(bool active) => active
       ? (ar ? 'تم تفعيل تشفير AES-256-GCM' : 'AES-256-GCM encryption enabled')
-      : (ar ? 'تم مسح كلمة مرور التشفير' : 'Encryption password cleared');
+      : (ar ? 'تم إيقاف كلمة مرور الخزنة' : 'Vault encryption key cleared');
   String get demoBackupToast => ar
-      ? 'وضع المعاينة: تم محاكاة النسخ الاحتياطي'
-      : 'Demo mode: index backup simulated';
+      ? 'تم حفظ نسخة الفهرس المشفّرة'
+      : 'Encrypted index backup saved';
   String get demoRestoreToast => ar
-      ? 'وضع المعاينة: تم محاكاة الاستعادة'
+      ? 'وضع المعاينة: تمت محاكاة الاستعادة'
       : 'Demo mode: index restore simulated';
   String get signedOutToast =>
-      ar ? 'تم تسجيل الخروج من تيليجرام' : 'Signed out of Telegram';
+      ar ? 'تم تسجيل الخروج من تيليجرام' : 'Logged out of Telegram';
+  String get aboutFooterText => ar
+      ? 'خزنة مشفرة بصفر معرفة فوق Telegram MTProto'
+      : 'Zero-knowledge encrypted vault over Telegram MTProto';
 }

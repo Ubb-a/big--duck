@@ -1,10 +1,9 @@
-import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
+import 'package:material_ui/material_ui.dart';
 
 import '../l10n/app_strings.dart';
 import '../state/app_controller.dart';
 import '../theme/app_theme.dart';
-import 'app_icon.dart';
 import 'vault_surface.dart';
 
 class FloatingTabBar extends StatelessWidget {
@@ -25,180 +24,159 @@ class FloatingTabBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final activeIndex = activeTab.index;
-    final motion = vaultMotion(context, 200);
+    final p = palette;
+    final items = [
+      (
+        tab: MobileTab.files,
+        icon: Icons.folder_outlined,
+        activeIcon: Icons.folder_rounded,
+        label: strings.tabFiles,
+        badge: 0,
+      ),
+      (
+        tab: MobileTab.transfers,
+        icon: Icons.swap_vert_rounded,
+        activeIcon: Icons.swap_vert_rounded,
+        label: strings.tabTransfers,
+        badge: activeTransferCount,
+      ),
+      (
+        tab: MobileTab.recent,
+        icon: Icons.schedule_rounded,
+        activeIcon: Icons.schedule_rounded,
+        label: strings.tabRecent,
+        badge: 0,
+      ),
+      (
+        tab: MobileTab.settings,
+        icon: Icons.tune_rounded,
+        activeIcon: Icons.tune_rounded,
+        label: strings.tabSettings,
+        badge: 0,
+      ),
+    ];
 
     return RepaintBoundary(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-        child: VaultSurface(
-          palette: palette,
-          borderRadius: VaultRadii.dock,
-          elevated: true,
-          padding: const EdgeInsets.all(6),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final tabWidth = constraints.maxWidth / 4;
-              final isRtl = Directionality.of(context) == TextDirection.rtl;
-              final pillLeft =
-                  isRtl ? (3 - activeIndex) * tabWidth : activeIndex * tabWidth;
-              return SizedBox(
-                height: 54,
-                child: Stack(
-                  children: [
-                    AnimatedPositioned(
-                      duration: motion,
-                      curve: Curves.easeOutCubic,
-                      left: pillLeft,
-                      top: 0,
-                      bottom: 0,
-                      width: tabWidth,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: palette.cobaltSoft,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        alignment: Alignment.topCenter,
-                        child: Container(
-                          width: 24,
-                          height: 2.5,
-                          decoration: BoxDecoration(
-                            color: palette.signal,
-                            borderRadius: const BorderRadius.vertical(
-                              bottom: Radius.circular(2),
-                            ),
-                          ),
-                        ),
-                      ),
+        padding: const EdgeInsets.fromLTRB(32, 0, 32, 16),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 320),
+            child: VaultSurface(
+              palette: p,
+              borderRadius: VaultRadii.pill,
+              elevated: true,
+              borderColor: p.glassTopLeftBorder,
+              padding: const EdgeInsets.all(6),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  for (final item in items)
+                    _NavCircleButton(
+                      key: ValueKey('nav_${item.tab.name}'),
+                      palette: p,
+                      icon: item.tab == activeTab
+                          ? item.activeIcon
+                          : item.icon,
+                      label: item.label,
+                      selected: item.tab == activeTab,
+                      badgeCount: item.badge,
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        onSelect(item.tab);
+                      },
                     ),
-                    Row(
-                      children: [
-                        _TabItem(
-                          palette: palette,
-                          isArabic: strings.ar,
-                          svgAsset: AppIcons.folderOpen,
-                          label: strings.tabFiles,
-                          selected: activeTab == MobileTab.files,
-                          onTap: () => _tap(MobileTab.files),
-                        ),
-                        _TabItem(
-                          palette: palette,
-                          isArabic: strings.ar,
-                          svgAsset: AppIcons.refresh,
-                          label: strings.tabRecent,
-                          selected: activeTab == MobileTab.recent,
-                          onTap: () => _tap(MobileTab.recent),
-                        ),
-                        _TabItem(
-                          palette: palette,
-                          isArabic: strings.ar,
-                          svgAsset: AppIcons.priorityArrows,
-                          label: strings.tabTransfers,
-                          badgeCount: activeTransferCount,
-                          selected: activeTab == MobileTab.transfers,
-                          onTap: () => _tap(MobileTab.transfers),
-                        ),
-                        _TabItem(
-                          palette: palette,
-                          isArabic: strings.ar,
-                          svgAsset: AppIcons.settings,
-                          label: strings.tabSettings,
-                          selected: activeTab == MobileTab.settings,
-                          onTap: () => _tap(MobileTab.settings),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              );
-            },
+                ],
+              ),
+            ),
           ),
         ),
       ),
     );
   }
-
-  void _tap(MobileTab tab) {
-    HapticFeedback.selectionClick();
-    onSelect(tab);
-  }
 }
 
-class _TabItem extends StatelessWidget {
+class _NavCircleButton extends StatelessWidget {
   final AppPalette palette;
-  final bool isArabic;
-  final String svgAsset;
+  final IconData icon;
   final String label;
-  final int badgeCount;
   final bool selected;
+  final int badgeCount;
   final VoidCallback onTap;
 
-  const _TabItem({
+  const _NavCircleButton({
+    super.key,
     required this.palette,
-    required this.isArabic,
-    required this.svgAsset,
+    required this.icon,
     required this.label,
-    this.badgeCount = 0,
     required this.selected,
+    required this.badgeCount,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final color = selected ? palette.cobalt : palette.muted;
-    final motion = vaultMotion(context, 160);
-    return Expanded(
-      child: VaultTap(
-        onTap: onTap,
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  AppSvgIcon(
-                    svgAsset,
-                    size: 19,
-                    color: color,
+    final p = palette;
+    final motion = vaultMotion(context, 250);
+    return Tooltip(
+      message: label,
+      child: Semantics(
+        button: true,
+        selected: selected,
+        label: label,
+        child: VaultTap(
+          onTap: onTap,
+          child: SizedBox(
+            width: 54,
+            height: 50,
+            child: Stack(
+              alignment: Alignment.center,
+              clipBehavior: Clip.none,
+              children: [
+                AnimatedContainer(
+                  duration: motion,
+                  curve: Curves.easeOut,
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: selected ? p.primaryBtnFill : Colors.transparent,
+                    shape: BoxShape.circle,
                   ),
-                  if (badgeCount > 0)
-                    PositionedDirectional(
-                      end: -10,
-                      top: -4,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 5, vertical: 1),
-                        decoration: BoxDecoration(
-                          color: palette.signal,
-                          borderRadius: BorderRadius.circular(VaultRadii.pill),
-                        ),
-                        child: Text(
-                          badgeCount > 99 ? '99+' : '$badgeCount',
-                          style: VaultText.tabular(
-                            palette,
-                            isArabic,
-                            size: 9,
-                            weight: FontWeight.w700,
-                            color: palette.signalInk,
-                          ),
+                  alignment: Alignment.center,
+                  child: Icon(
+                    icon,
+                    size: 21,
+                    color: selected ? p.primaryBtnInk : p.secondary,
+                  ),
+                ),
+                if (badgeCount > 0)
+                  PositionedDirectional(
+                    top: 4,
+                    end: 4,
+                    child: Container(
+                      constraints:
+                          const BoxConstraints(minWidth: 16, minHeight: 16),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 4, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: p.signalGreen,
+                        borderRadius: BorderRadius.circular(VaultRadii.pill),
+                        border: Border.all(color: p.canvas, width: 1.5),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        badgeCount > 9 ? '9+' : '$badgeCount',
+                        style: VaultText.mono(
+                          p,
+                          size: 9,
+                          weight: FontWeight.w700,
+                          color: p.signalGreenInk,
                         ),
                       ),
                     ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              AnimatedDefaultTextStyle(
-                duration: motion,
-                style: TextStyle(
-                  fontFamily: VaultText.fontFamily(isArabic),
-                  color: color,
-                  fontSize: 11,
-                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                ),
-                child: Text(label),
-              ),
-            ],
+                  ),
+              ],
+            ),
           ),
         ),
       ),

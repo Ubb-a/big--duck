@@ -107,14 +107,14 @@ big_duck/
 │   ├── state/
 │   │   └── app_controller.dart            # الحالة الرئيسية، حفظ الإعدادات/الجلسة، الأوامر والأحداث
 │   ├── theme/
-│   │   └── app_theme.dart                 # ألوان Signal Vault والخطوط وأزمنة الحركة (vaultMotion)
+│   │   └── app_theme.dart                 # ألوان Obsidian & Ivory Signal Vault وأزمنة الحركة 250ms (vaultMotion)
 │   ├── utils/
 │   │   └── format.dart                    # تنسيق الأحجام والأوقات وكشف أنواع الملفات
 │   ├── screens/
 │   │   ├── auth_screen.dart               # ربط Telegram من 4 خطوات مع تبديل اللغة السريع
 │   │   ├── lock_screen.dart               # شاشة القفل بالبصمة / Face ID
 │   │   ├── files_screen.dart              # متصفح الخزنة، البحث الشامل، التصفية، التحديد المتعدد، العرض الشبكي
-│   │   ├── preview_screen.dart            # معاينة الصور (Darkroom)، PDF، الفيديو، والصوت
+│   │   ├── preview_screen.dart            # معاينة الصور (Darkroom #050506)، PDF، الفيديو، والصوت
 │   │   ├── transfers_screen.dart          # قائمة التحويلات المباشرة مع الإيقاف والاستكمال
 │   │   └── settings_screen.dart           # الحساب والأمان، اختيار/إنشاء جروب التخزين، التشفير والنسخ الاحتياطي
 │   ├── services/
@@ -125,8 +125,9 @@ big_duck/
 │   │   └── thumbnail_service.dart         # توليد وكاش مصغرات الصور وصفحة PDF الأولى
 │   └── widgets/
 │       ├── app_icon.dart                  # عارض أيقونات SVG
-│       ├── floating_tab_bar.dart          # شريط التنقل العائم مع دعم RTL وعداد التحويلات النشطة
-│       └── vault_surface.dart             # مكونات Signal Vault (VaultSurface, VaultStatusDot, VaultProportionalTape)
+│       ├── floating_tab_bar.dart          # شريط التنقل العائم الدائري مع دعم RTL وعداد التحويلات النشطة
+│       ├── storage_destination_sheet.dart # نافذة اختيار وإنشاء جروبات وقنوات الخزنة المملوكة
+│       └── vault_surface.dart             # مكونات الزجاج السائل Obsidian & Ivory (أزرار، أشرطة تقدم، شرائح)
 ├── rust/
 │   ├── Cargo.toml                         # Workspace يضم core و mobile-bridge
 │   ├── Cargo.lock                         # تثبيت إصدارات الحزم
@@ -157,7 +158,10 @@ big_duck/
 │   └── build_ios_rust.sh                  # بناء libteledrive_mobile_bridge.a / BigDuckCore.xcframework على macOS
 ├── test/
 │   └── widget_test.dart                   # اختبارات الواجهة، التصفية، المعاينة، حفظ الجلسة، واختيار الوجهة
-├── DESIGN.md                              # دليل نظام التصميم (Signal Vault)
+├── docs/
+│   └── design-board/
+│       └── index.html                     # لوحة نظام التصميم التفاعلية (Obsidian & Ivory Signal Vault · 393×852)
+├── DESIGN.md                              # دليل نظام التصميم المحدّث (Obsidian Luxury Dark & Ivory Luxury Light)
 ├── pubspec.yaml                           # اعتماديات Flutter وخطوط وأصول الأيقونات
 ├── .gitattributes                         # توحيد LF لملفات .sh و .yml و .rs و .dart
 └── .gitignore                             # استبعاد rust/target و jniLibs و build/ وملفات Apk/Ipa المولّدة
