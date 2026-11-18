@@ -1,0 +1,95 @@
+name: Publish GitHub Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Release tag (e.g. v1.0.0)"
+        required: true
+        default: "v1.0.0"
+      run_id:
+        description: "Source build run ID (leave empty for latest successful build-mobile.yml run)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish-release:
+    name: Publish APK & IPA Release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Resolve build run & download APK + IPA artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          INPUT_RUN_ID="${{ inputs.run_id }}"
+          if [ -n "$INPUT_RUN_ID" ]; then
+            RUN_ID="$INPUT_RUN_ID"
+          else
+            RUN_ID=$(gh api "/repos/${{ github.repository }}/actions/workflows/build-mobile.yml/runs?status=success&per_page=1" --jq '.workflow_runs[0].id')
+          fi
+          if [ -z "$RUN_ID" ] || [ "$RUN_ID" = "null" ]; then
+            echo "ERROR: No successful build-mobile.yml workflow run found"
+            exit 1
+          fi
+          echo "Downloading artifacts from workflow run #$RUN_ID..."
+          mkdir -p release_assets
+          gh run download "$RUN_ID" -R "${{ github.repository }}" -n BIG-DUCK-android-apk -D release_assets/android
+          gh run download "$RUN_ID" -R "${{ github.repository }}" -n BIG-DUCK-ios-ipa -D release_assets/ios
+          ls -lh release_assets/android/BIG-DUCK-android.apk release_assets/ios/BIG-DUCK-ios.ipa
+          echo "SOURCE_RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
+
+      - name: Create or update GitHub Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            TAG="${{ inputs.tag_name }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+
+          cat <<'EOF' > release_notes.md
+          ## BIG DUCK — Signal Vault (__TAG__)
+
+          خزنة سحابية مشفرة بصفر معرفة فوق **Telegram MTProto** بتشفير محلي **Argon2id + AES-256-GCM** على الجهاز قبل الرفع.
+
+          ### التنزيلات المباشرة | Direct Downloads
+          - **Android (`BIG-DUCK-android.apk`)** — جاهز للتثبيت المباشر على أجهزة أندرويد (`arm64-v8a` / `armeabi-v7a` / `x86_64`).
+          - **iOS (`BIG-DUCK-ios.ipa`)** — جاهز للتثبيت عبر **Sideloadly** أو **AltStore** على أجهزة iPhone (`arm64`).
+
+          ### أبرز المميزات والتحديثات في هذا الإصدار
+          - تصميم **Obsidian & Ivory Luxury** ثنائي اللغة (العربية `RTL` أساسي + الإنجليزية `LTR`).
+          - تشفير وتقسيم الملفات محلياً بحجم افتراضي `64 MiB` مع استكمال تلقائي عند انقطاع الشبكة.
+          - رفع متوازٍ فائق السرعة عبر تجمّع اتصالات **MTProto** مع عرض لحظي للنسبة المئوية وسرعة الرفع (`MB/s`) والوقت المتبقي.
+          - إعادة اتصال تلقائية ذكية لمقابس تيليجرام على iOS/Android ودعم القفل الحيوي (**Face ID / البصمة**).
+          EOF
+
+          sed -i "s|__TAG__|${TAG}|g" release_notes.md
+          printf '\n_Built from workflow run #%s._\n' "${SOURCE_RUN_ID}" >> release_notes.md
+
+          APK="release_assets/android/BIG-DUCK-android.apk"
+          IPA="release_assets/ios/BIG-DUCK-ios.ipa"
+
+          if gh release view "$TAG" -R "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$APK" "$IPA" --clobber -R "${{ github.repository }}"
+            gh release edit "$TAG" -R "${{ github.repository }}" --title "BIG DUCK — Signal Vault $TAG" --notes-file release_notes.md
+          else
+            gh release create "$TAG" "$APK" "$IPA" \
+              -R "${{ github.repository }}" \
+              --title "BIG DUCK — Signal Vault $TAG" \
+              --notes-file release_notes.md
+          fi
