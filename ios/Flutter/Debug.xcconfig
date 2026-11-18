@@ -1,0 +1,5 @@
+#include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.debug.xcconfig"
+#include "Generated.xcconfig"
+OTHER_LDFLAGS = $(inherited) -force_load "$(SRCROOT)/Frameworks/libteledrive_mobile_bridge.a" -Wl,-u,_bigduck_start -Wl,-u,_bigduck_send_command -Wl,-u,_bigduck_poll_event -Wl,-u,_bigduck_free_string -Wl,-u,_bigduck_stop -lc++ -lresolv -framework Security -framework SystemConfiguration
+STRIP_STYLE = non-global
+DEAD_CODE_STRIPPING = NO

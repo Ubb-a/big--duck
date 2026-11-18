@@ -1,0 +1,25 @@
+[package]
+name = "teledrive-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+grammers-client.workspace = true
+grammers-session.workspace = true
+tokio.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+sqlx.workspace = true
+sha2.workspace = true
+hex.workspace = true
+mime_guess.workspace = true
+futures-util.workspace = true
+aes-gcm.workspace = true
+argon2.workspace = true
+rand.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+keyring.workspace = true

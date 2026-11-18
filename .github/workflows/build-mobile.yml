@@ -1,0 +1,187 @@
+name: Build Android APK & iOS IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+    tags:
+      - "v*"
+  pull_request:
+    branches: [main, master]
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    name: Build Android APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Accept Android SDK licenses and ensure NDK
+        shell: bash
+        run: |
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          yes | "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          if [ ! -d "$SDK_ROOT/ndk" ] || [ -z "$(ls -A "$SDK_ROOT/ndk" 2>/dev/null)" ]; then
+            "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "ndk;28.2.13676358"
+          fi
+          "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37.0" >/dev/null || "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37" >/dev/null || true
+
+      - name: Set up Rust toolchain for Android
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android, armv7-linux-androideabi, x86_64-linux-android
+
+      - name: Cache Cargo artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      - name: Install cargo-ndk
+        uses: taiki-e/install-action@cargo-ndk
+
+      - name: Build Android Rust native libraries
+        run: |
+          chmod +x ./scripts/build_android_rust.sh
+          ./scripts/build_android_rust.sh
+
+      - name: Fetch Flutter dependencies
+        run: flutter pub get
+
+      - name: Analyze & test Flutter app
+        run: |
+          flutter analyze
+          flutter test
+
+      - name: Build release APK
+        run: |
+          flutter build apk --release
+          cp build/app/outputs/flutter-apk/app-release.apk BIG-DUCK-android.apk
+          ls -lh BIG-DUCK-android.apk
+
+      - name: Upload Android APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BIG-DUCK-android-apk
+          path: BIG-DUCK-android.apk
+          if-no-files-found: error
+
+  build-ipa:
+    name: Build iOS IPA (Sideloadly)
+    runs-on: macos-15
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          ls -d /Applications/Xcode*.app
+          SELECTED_XCODE=$(ls -d /Applications/Xcode*.app | grep -v -i beta | sort -V | tail -n 1 || true)
+          if [ -z "$SELECTED_XCODE" ]; then
+            SELECTED_XCODE=$(ls -d /Applications/Xcode*.app | sort -V | tail -n 1)
+          fi
+          echo "Selecting $SELECTED_XCODE"
+          sudo xcode-select -s "$SELECTED_XCODE/Contents/Developer"
+          xcodebuild -version
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Set up Rust toolchain for iOS
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+
+      - name: Cache Cargo artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      - name: Build Rust static library for iOS device
+        run: |
+          chmod +x ./scripts/build_ios_rust.sh
+          ./scripts/build_ios_rust.sh --device-only
+
+      - name: Fetch Flutter dependencies
+        run: flutter pub get
+
+      - name: Build iOS release app (unsigned)
+        run: |
+          set -o pipefail
+          flutter build ios --release --no-codesign -v 2>&1 | tee ios_build.log
+
+      - name: Upload iOS build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-build-logs
+          path: ios_build.log
+          if-no-files-found: ignore
+
+      - name: Verify Rust FFI symbols are linked
+        run: |
+          BINARY="build/ios/iphoneos/Runner.app/Runner"
+          if [ ! -f "$BINARY" ]; then
+            echo "ERROR: Runner binary not found at $BINARY"
+            exit 1
+          fi
+          nm -gU "$BINARY" | grep -q "_bigduck_start"
+          nm -gU "$BINARY" | grep -q "_bigduck_send_command"
+          echo "Verified Rust C-ABI symbols exported in $BINARY"
+
+      - name: Package IPA for Sideloadly / AltStore
+        run: |
+          rm -rf ipa_stage
+          mkdir -p ipa_stage/Payload
+          cp -R build/ios/iphoneos/Runner.app ipa_stage/Payload/
+          (cd ipa_stage && zip -qry ../BIG-DUCK-ios.ipa Payload)
+          ls -lh BIG-DUCK-ios.ipa
+
+      - name: Upload iOS IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BIG-DUCK-ios-ipa
+          path: BIG-DUCK-ios.ipa
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: [build-apk, build-ipa]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Download APK & IPA artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release_assets
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release_assets/BIG-DUCK-android.apk
+            release_assets/BIG-DUCK-ios.ipa
