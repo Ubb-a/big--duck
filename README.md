@@ -107,7 +107,7 @@ big_duck/
 │   ├── state/
 │   │   └── app_controller.dart            # الحالة الرئيسية، حفظ الإعدادات/الجلسة، الأوامر والأحداث
 │   ├── theme/
-│   │   └── app_theme.dart                 # ألوان Obsidian & Ivory Signal Vault وأزمنة الحركة 250ms (vaultMotion)
+│   │   └── app_theme.dart                 # ألوان Obsidian & Ivory Signal Vault، رموز الحركة vaultMotion، و VaultHaptics
 │   ├── utils/
 │   │   └── format.dart                    # تنسيق الأحجام والأوقات وكشف أنواع الملفات
 │   ├── screens/
@@ -127,6 +127,7 @@ big_duck/
 │       ├── app_icon.dart                  # عارض أيقونات SVG
 │       ├── floating_tab_bar.dart          # شريط التنقل العائم الدائري مع دعم RTL وعداد التحويلات النشطة
 │       ├── storage_destination_sheet.dart # نافذة اختيار وإنشاء جروبات وقنوات الخزنة المملوكة
+│       ├── vault_motion_widgets.dart      # عناصر الحركة (Parallax, Stagger, RollingText, DrawCheck, CircularReveal, Shake)
 │       └── vault_surface.dart             # مكونات الزجاج السائل Obsidian & Ivory (أزرار، أشرطة تقدم، شرائح)
 ├── rust/
 │   ├── Cargo.toml                         # Workspace يضم core و mobile-bridge
@@ -160,8 +161,10 @@ big_duck/
 │   └── widget_test.dart                   # اختبارات الواجهة، التصفية، المعاينة، حفظ الجلسة، واختيار الوجهة
 ├── docs/
 │   └── design-board/
-│       └── index.html                     # لوحة نظام التصميم التفاعلية (Obsidian & Ivory Signal Vault · 393×852)
+│       ├── index.html                     # لوحة نظام التصميم التفاعلية (Obsidian & Ivory Signal Vault · 393×852)
+│       └── motion.html                    # مواصفات الحركة والبروتوتايب التفاعلي لـ 7 تدفقات (AR/EN · Dark/Light)
 ├── DESIGN.md                              # دليل نظام التصميم المحدّث (Obsidian Luxury Dark & Ivory Luxury Light)
+├── MOTION.md                              # مرجع vaultMotion الكامل، جدول Flutter Handoff، وتدقيق كلفة الحلقات CPU/GPU
 ├── pubspec.yaml                           # اعتماديات Flutter وخطوط وأصول الأيقونات
 ├── .gitattributes                         # توحيد LF لملفات .sh و .yml و .rs و .dart
 └── .gitignore                             # استبعاد rust/target و jniLibs و build/ وملفات Apk/Ipa المولّدة

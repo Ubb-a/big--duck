@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 class VaultRadii {
@@ -184,7 +185,7 @@ class VaultText {
         fontFamily: fontFamily(isArabic),
         fontFamilyFallback: const ['IBMPlexSansArabic', 'IBMPlexSans'],
         color: color ?? p.ink,
-        fontSize: isArabic ? size : size,
+        fontSize: size,
         fontWeight: weight,
         letterSpacing: isArabic ? 0 : (size >= 30 ? -0.8 : -0.45),
         height: isArabic ? 1.3 : 1.15,
@@ -278,9 +279,88 @@ class VaultText {
       );
 }
 
-Duration vaultMotion(BuildContext context, [int milliseconds = 250]) {
-  if (MediaQuery.disableAnimationsOf(context)) {
-    return Duration.zero;
+/// Canonical Signal Vault motion token table (durations, curves, distances, stagger, RTL, reduce-motion).
+class VaultMotionTokens {
+  const VaultMotionTokens();
+
+  // Durations
+  final Duration instant = const Duration(milliseconds: 90);
+  final Duration reducedFade = const Duration(milliseconds: 150);
+  final Duration fast = const Duration(milliseconds: 180);
+  final Duration base = const Duration(milliseconds: 250);
+  final Duration slow = const Duration(milliseconds: 400);
+  final Duration ambient = const Duration(milliseconds: 4000);
+  final Duration staggerStep = const Duration(milliseconds: 30);
+  final int maxStaggerItems = 8;
+
+  // Curves
+  final Curve standard = const Cubic(0.2, 0.0, 0.0, 1.0);
+  final Curve emphasized = const Cubic(0.16, 1.0, 0.3, 1.0);
+  final Curve exit = const Cubic(0.4, 0.0, 1.0, 1.0);
+  final Curve linear = Curves.linear;
+
+  // Distances (logical px)
+  final double shiftSmall = 8.0;
+  final double shiftMedium = 16.0;
+  final double shiftPage = 24.0;
+
+  bool isReduced(BuildContext context) =>
+      MediaQuery.disableAnimationsOf(context);
+
+  /// Callable helper matching legacy `vaultMotion(context, ms)` call sites while respecting Reduce Motion.
+  Duration call(BuildContext context, [int milliseconds = 250]) {
+    if (isReduced(context)) return reducedFade;
+    return Duration(milliseconds: milliseconds);
   }
-  return Duration(milliseconds: milliseconds);
+
+  /// Resolves a motion token duration with clean 150ms fade fallback when Reduce Motion is enabled.
+  Duration duration(BuildContext context, Duration token) =>
+      isReduced(context) ? reducedFade : token;
+
+  /// Suppresses spatial shifts when Reduce Motion is active.
+  Offset offset(BuildContext context, Offset normal) =>
+      isReduced(context) ? Offset.zero : normal;
+
+  /// Suppresses scaling transitions when Reduce Motion is active.
+  double scale(BuildContext context, double normal) =>
+      isReduced(context) ? 1.0 : normal;
+
+  /// Mirrors horizontal slide delta in RTL (`TextDirection.rtl`).
+  double directionalDx(BuildContext context, double dx) {
+    if (isReduced(context)) return 0.0;
+    final rtl = Directionality.maybeOf(context) == TextDirection.rtl;
+    return rtl ? -dx : dx;
+  }
+
+  /// Controls whether ambient looping animations should tick.
+  /// Stops all loops under Reduce Motion and avoids infinite ticker hangs during `flutter test`.
+  bool allowLoops(BuildContext context, {bool forceInTest = false}) {
+    if (isReduced(context)) return false;
+    var inTest = false;
+    assert(() {
+      inTest = WidgetsBinding.instance.runtimeType
+          .toString()
+          .contains('TestWidgets');
+      return true;
+    }());
+    if (inTest && !forceInTest) return false;
+    return true;
+  }
+
+  Interval staggerInterval(int index, {int stepMs = 30, int totalMs = 450}) {
+    final capped = index.clamp(0, maxStaggerItems);
+    final start = ((capped * stepMs) / totalMs).clamp(0.0, 0.72);
+    final end = (start + 0.55).clamp(0.0, 1.0);
+    return Interval(start, end, curve: standard);
+  }
+}
+
+const vaultMotion = VaultMotionTokens();
+
+class VaultHaptics {
+  static void light() => HapticFeedback.lightImpact();
+  static void selection() => HapticFeedback.selectionClick();
+  static void medium() => HapticFeedback.mediumImpact();
+  static void success() => HapticFeedback.lightImpact();
+  static void error() => HapticFeedback.vibrate();
 }

@@ -1,10 +1,8 @@
-import 'dart:math' as math;
-
-import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import '../state/app_controller.dart';
 import '../theme/app_theme.dart';
+import '../widgets/vault_motion_widgets.dart';
 import '../widgets/vault_surface.dart';
 
 class LockScreen extends StatefulWidget {
@@ -25,26 +23,26 @@ class LockScreen extends StatefulWidget {
 
 class _LockScreenState extends State<LockScreen> with TickerProviderStateMixin {
   late final AnimationController _breathCtrl;
-  late final AnimationController _shakeCtrl;
+  late final AnimationController _exitScaleCtrl;
+  bool _breathRunning = false;
   bool _authenticating = false;
   late bool _failed = widget.initialFailed;
+  bool _succeeded = false;
+  int _shakeCounter = 0;
 
   @override
   void initState() {
     super.initState();
     _breathCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 4),
+      duration: vaultMotion.ambient, // 4s ease-in-out loop
     );
-    _shakeCtrl = AnimationController(
+    _exitScaleCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 360),
+      duration: vaultMotion.slow, // 400ms emphasized
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      if (!MediaQuery.disableAnimationsOf(context)) {
-        _breathCtrl.repeat(reverse: true);
-      }
       if (!widget.initialFailed) {
         _unlock();
       }
@@ -52,26 +50,57 @@ class _LockScreenState extends State<LockScreen> with TickerProviderStateMixin {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final allow = vaultMotion.allowLoops(context) && !_succeeded;
+    if (allow && !_breathRunning) {
+      _breathRunning = true;
+      _breathCtrl.repeat(reverse: true);
+    } else if (!allow && _breathRunning) {
+      _breathRunning = false;
+      _breathCtrl.stop();
+    }
+  }
+
+  @override
   void dispose() {
     _breathCtrl.dispose();
-    _shakeCtrl.dispose();
+    _exitScaleCtrl.dispose();
     super.dispose();
   }
 
   Future<void> _unlock() async {
-    if (_authenticating) return;
+    if (_authenticating || _succeeded) return;
+    final reduced = vaultMotion.isReduced(context);
+    final playTransition = !reduced && vaultMotion.allowLoops(context);
     setState(() {
       _authenticating = true;
       _failed = false;
     });
     try {
-      final ok = await widget.controller.unlockWithBiometrics();
+      final ok = await widget.controller.unlockWithBiometrics(
+        onBeforeUnlock: playTransition
+            ? () async {
+                VaultHaptics.success();
+                if (!mounted) return;
+                setState(() {
+                  _breathRunning = false;
+                  _breathCtrl.stop();
+                  _succeeded = true;
+                });
+                await _exitScaleCtrl.forward(from: 0.0);
+              }
+            : null,
+      );
       if (!mounted) return;
-      if (!ok) {
-        setState(() => _failed = true);
-        if (!MediaQuery.disableAnimationsOf(context)) {
-          _shakeCtrl.forward(from: 0.0);
-        }
+      if (ok) {
+        if (!playTransition) VaultHaptics.success();
+      } else {
+        VaultHaptics.error();
+        setState(() {
+          _failed = true;
+          _shakeCounter++;
+        });
       }
     } finally {
       if (mounted) {
@@ -86,7 +115,7 @@ class _LockScreenState extends State<LockScreen> with TickerProviderStateMixin {
     final s = ctrl.strings;
     final passCtrl = TextEditingController();
 
-    showDialog<void>(
+    showVaultDialog<void>(
       context: context,
       builder: (ctx) => Directionality(
         textDirection: s.ar ? TextDirection.rtl : TextDirection.ltr,
@@ -110,30 +139,22 @@ class _LockScreenState extends State<LockScreen> with TickerProviderStateMixin {
                 style: VaultText.body(p, s.ar, size: 13, color: p.secondary),
               ),
               const SizedBox(height: 16),
-              TextField(
-                controller: passCtrl,
-                obscureText: true,
-                keyboardType: TextInputType.number,
-                textAlign: TextAlign.center,
-                style: VaultText.mono(p, size: 16, color: p.ink),
-                decoration: InputDecoration(
-                  hintText: '••••',
-                  hintStyle: VaultText.mono(p, size: 16, color: p.muted),
-                  filled: true,
-                  fillColor: p.glassFill,
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(VaultRadii.tile),
-                    borderSide: BorderSide(color: p.glassBorder),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(VaultRadii.tile),
-                    borderSide: BorderSide(color: p.glassBorder),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(VaultRadii.tile),
-                    borderSide: BorderSide(color: p.champagne),
+              VaultGlassInputContainer(
+                palette: p,
+                borderRadius: VaultRadii.tile,
+                builder: (context, focusNode) => TextField(
+                  focusNode: focusNode,
+                  controller: passCtrl,
+                  obscureText: true,
+                  keyboardType: TextInputType.number,
+                  textAlign: TextAlign.center,
+                  style: VaultText.mono(p, size: 16, color: p.ink),
+                  decoration: InputDecoration(
+                    hintText: '••••',
+                    hintStyle: VaultText.mono(p, size: 16, color: p.muted),
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 12),
                   ),
                 ),
               ),
@@ -170,10 +191,11 @@ class _LockScreenState extends State<LockScreen> with TickerProviderStateMixin {
   Widget build(BuildContext context) {
     final p = widget.palette;
     final s = widget.controller.strings;
-    final motion = vaultMotion(context, 250);
+    final reduced = vaultMotion.isReduced(context);
+    final fastDur = vaultMotion.duration(context, vaultMotion.fast);
 
     return Scaffold(
-      backgroundColor: p.canvas,
+      backgroundColor: Colors.transparent,
       body: VaultCanvasBackdrop(
         palette: p,
         child: SafeArea(
@@ -193,69 +215,105 @@ class _LockScreenState extends State<LockScreen> with TickerProviderStateMixin {
                 ),
                 const Spacer(),
 
-                AnimatedBuilder(
-                  animation: Listenable.merge([_breathCtrl, _shakeCtrl]),
-                  builder: (context, child) {
-                    final breath = _breathCtrl.value;
-                    final shakeDx = _shakeCtrl.isAnimating
-                        ? math.sin(_shakeCtrl.value * math.pi * 4) * 8
-                        : 0.0;
-                    final ringColor = _failed
-                        ? p.coral
-                        : Color.lerp(
-                              p.champagne.withValues(alpha: 0.28),
-                              p.champagne.withValues(alpha: 0.72),
-                              breath,
-                            ) ??
-                            p.champagne;
+                VaultHorizontalShake(
+                  triggerCount: _shakeCounter,
+                  amplitude: 8,
+                  cycles: 3,
+                  duration: const Duration(milliseconds: 300),
+                  child: AnimatedBuilder(
+                    animation: Listenable.merge([_breathCtrl, _exitScaleCtrl]),
+                    builder: (context, _) {
+                      final breath = _breathRunning ? _breathCtrl.value : 0.4;
+                      final exitT =
+                          vaultMotion.emphasized.transform(_exitScaleCtrl.value);
+                      final scale = reduced
+                          ? 1.0
+                          : (_succeeded
+                              ? (1.0 + 0.4 * exitT)
+                              : (1.0 + 0.06 * breath));
+                      final opacity = _succeeded ? (1.0 - exitT) : 1.0;
 
-                    return Transform.translate(
-                      offset: Offset(shakeDx, 0),
-                      child: VaultTap(
-                        onTap: _authenticating ? null : _unlock,
-                        child: Container(
-                          width: 160,
-                          height: 160,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: (_failed ? p.coral : p.champagne)
-                                    .withValues(
-                                        alpha: _failed
-                                            ? 0.28
-                                            : (0.08 + breath * 0.14)),
-                                blurRadius: 36 + (breath * 16),
-                                spreadRadius: 2 + (breath * 4),
+                      final ringColor = _succeeded
+                          ? p.signalGreen
+                          : (_failed
+                              ? p.coral
+                              : p.champagne.withValues(
+                                  alpha: 0.20 + 0.30 * breath,
+                                ));
+
+                      return Opacity(
+                        opacity: opacity.clamp(0.0, 1.0),
+                        child: Transform.scale(
+                          scale: scale,
+                          child: VaultTap(
+                            onTap: _authenticating ? null : _unlock,
+                            child: Container(
+                              width: 160,
+                              height: 160,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: (_succeeded
+                                            ? p.signalGreen
+                                            : (_failed
+                                                ? p.coral
+                                                : p.champagne))
+                                        .withValues(
+                                            alpha: _failed
+                                                ? 0.28
+                                                : (0.08 + breath * 0.16)),
+                                    blurRadius: 36 + (breath * 16),
+                                    spreadRadius: 2 + (breath * 4),
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
-                          child: VaultSurface(
-                            palette: p,
-                            borderRadius: VaultRadii.pill,
-                            elevated: true,
-                            borderColor: ringColor,
-                            child: Center(
-                              child: _authenticating
-                                  ? SizedBox(
-                                      width: 34,
-                                      height: 34,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: p.champagne,
-                                      ),
-                                    )
-                                  : Icon(
-                                      Icons.fingerprint_rounded,
-                                      size: 56,
-                                      color: _failed ? p.coral : p.champagne,
-                                    ),
+                              child: VaultSurface(
+                                palette: p,
+                                borderRadius: VaultRadii.pill,
+                                elevated: true,
+                                borderColor: ringColor,
+                                child: Center(
+                                  child: AnimatedSwitcher(
+                                    duration: vaultMotion.duration(
+                                        context, vaultMotion.base),
+                                    child: _succeeded
+                                        ? VaultAnimatedDrawCheck(
+                                            key: const ValueKey('lock_ok'),
+                                            color: p.signalGreen,
+                                            size: 52,
+                                            strokeWidth: 2.5,
+                                          )
+                                        : (_authenticating
+                                            ? SizedBox(
+                                                key:
+                                                    const ValueKey('lock_busy'),
+                                                width: 34,
+                                                height: 34,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                  strokeWidth: 1.8,
+                                                  color: p.champagne,
+                                                ),
+                                              )
+                                            : Icon(
+                                                Icons.fingerprint_rounded,
+                                                key: const ValueKey(
+                                                    'lock_finger'),
+                                                size: 56,
+                                                color: _failed
+                                                    ? p.coral
+                                                    : p.champagne,
+                                              )),
+                                  ),
+                                ),
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    );
-                  },
+                      );
+                    },
+                  ),
                 ),
 
                 const SizedBox(height: 28),
@@ -266,7 +324,7 @@ class _LockScreenState extends State<LockScreen> with TickerProviderStateMixin {
                 ),
                 const SizedBox(height: 8),
                 AnimatedSwitcher(
-                  duration: motion,
+                  duration: fastDur,
                   child: Text(
                     _failed ? s.tryAgainText : s.vaultLockedSub,
                     key: ValueKey(_failed),
@@ -284,7 +342,7 @@ class _LockScreenState extends State<LockScreen> with TickerProviderStateMixin {
                 const Spacer(),
                 TextButton(
                   onPressed: () {
-                    HapticFeedback.selectionClick();
+                    VaultHaptics.selection();
                     _showPasscodeSheet();
                   },
                   child: Text(

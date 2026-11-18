@@ -84,5 +84,6 @@ Quiet luxury mobile interface (`393×852` reference viewport, Arabic RTL primary
 - **Floating Bottom Nav (`FloatingTabBar`):** Detached `999`-radius liquid-glass pill anchored `16px` above the bottom safe area with 4 circular icon buttons (`Files`, `Transfers`, `Preview/Recent`, `Settings`), active circle in Champagne/Graphite, live green badge on `Transfers`, and full RTL mirroring.
 - **Additional Primitives:** `VaultGlassSearchField`, `VaultProgressBar`, `VaultChunkTape`, `VaultQuickActionCircle`, `VaultConfirmSquareButton`, `VaultToggle`, `VaultMonoChip`, `VaultSegmentedControl`, `VaultStackedGlassCard`, `VaultSheetShell` (`32px`), and `VaultDialogShell` (`26px`).
 
-## Interactive Style Board
-Open [docs/design-board/index.html](docs/design-board/index.html) locally in any browser to inspect all tonal ramps, reusable components, motion specs, and side-by-side `393×852` iPhone 15 Pro frames across **Obsidian Dark** / **Ivory Light** and **Arabic RTL** / **English LTR**.
+## Interactive Style Board & Motion Spec
+- Open [`docs/design-board/index.html`](docs/design-board/index.html) locally in any browser to inspect all tonal ramps, reusable components, and side-by-side `393×852` iPhone 15 Pro frames across **Obsidian Dark** / **Ivory Light** and **Arabic RTL** / **English LTR**.
+- See [`MOTION.md`](MOTION.md) and open [`docs/design-board/motion.html`](docs/design-board/motion.html) for the full `vaultMotion` specification, animated cubic-Bézier curve charts, Reduce Motion `150ms` fallback, Flutter handoff table, looping CPU/GPU audit, and 7 clickable interactive prototypes.

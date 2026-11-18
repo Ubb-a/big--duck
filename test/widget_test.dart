@@ -357,4 +357,92 @@ void main() {
     expect(find.text('Secret Duck Vault'), findsOneWidget);
     await tester.pump(const Duration(seconds: 4));
   });
+
+  testWidgets(
+      'Motion engine honors Reduce Motion 150ms fallback, fans out + FAB, restores Undo delete, and cross-fades chunk notes',
+      (WidgetTester tester) async {
+    late bool reducedFlag;
+    late Duration reducedSlow;
+    late bool loopsAllowed;
+
+    await tester.pumpWidget(
+      MediaQuery(
+        data: const MediaQueryData(disableAnimations: true),
+        child: MaterialApp(
+          home: Builder(
+            builder: (ctx) {
+              reducedFlag = vaultMotion.isReduced(ctx);
+              reducedSlow = vaultMotion.duration(ctx, vaultMotion.slow);
+              loopsAllowed = vaultMotion.allowLoops(ctx);
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      ),
+    );
+    expect(reducedFlag, isTrue);
+    expect(reducedSlow, const Duration(milliseconds: 150));
+    expect(loopsAllowed, isFalse);
+
+    final controller = AppController(isArabic: false)
+      ..debugPrimeSavedSession(fullName: 'Vault Tester');
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(BigDuckApp(controller: controller));
+    await tester.pumpAndSettle();
+
+    // + FAB fan-out
+    await tester.tap(find.byIcon(Icons.add_rounded));
+    await tester.pumpAndSettle();
+    expect(find.text('Upload file'), findsOneWidget);
+    expect(find.text('New folder'), findsOneWidget);
+
+    await tester.tap(find.text('New folder'));
+    await tester.pumpAndSettle();
+    expect(find.text('Cancel'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+
+    // Long-press multi-select -> Delete -> Undo toast restore
+    await tester.drag(find.text('Documents'), const Offset(0, -220));
+    await tester.pumpAndSettle();
+    await tester.longPress(find.text('Passport_Scan_Encrypted.pdf'));
+    await tester.pumpAndSettle();
+    expect(find.text('Delete'), findsOneWidget);
+
+    await tester.tap(find.text('Delete'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Delete').last);
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('Passport_Scan_Encrypted.pdf'), findsNothing);
+    expect(find.text('Undo'), findsOneWidget);
+
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+    expect(find.text('Passport_Scan_Encrypted.pdf'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 4));
+
+    await tester.drag(find.text('Passport_Scan_Encrypted.pdf'), const Offset(0, 220));
+    await tester.pumpAndSettle();
+    expect(controller.navHiddenByScroll, isFalse);
+
+    // Settings chunk caption cross-fade & circular reveal origin
+    await tester.tap(find.byKey(const ValueKey('nav_settings')));
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(SettingsScreen), const Offset(0, -650));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('512 MiB'));
+    await tester.pumpAndSettle();
+    expect(find.text('Higher throughput for large files on Wi-Fi'),
+        findsOneWidget);
+
+    await tester.drag(find.byType(SettingsScreen), const Offset(0, -350));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Light'));
+    await tester.pumpAndSettle();
+    expect(controller.themeMode, ThemeMode.light);
+    expect(controller.themeRevealOrigin, isNotNull);
+
+    await tester.pump(const Duration(seconds: 4));
+  });
 }

@@ -56,6 +56,8 @@ class AppStrings {
   String get renameAction => ar ? 'تسمية' : 'Rename';
   String get downloadAction => ar ? 'تنزيل' : 'Download';
   String get deleteAction => ar ? 'حذف' : 'Delete';
+  String get undoAction => ar ? 'تراجع' : 'Undo';
+  String get restoredToast => ar ? 'تم الاسترجاع' : 'Restored items';
 
   // Move modal
   String get moveToTitle => ar ? 'نقل إلى مجلد' : 'Move to folder';

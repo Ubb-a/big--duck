@@ -13,6 +13,7 @@ import '../models/core_models.dart';
 import '../state/app_controller.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
+import '../widgets/vault_motion_widgets.dart';
 import '../widgets/vault_surface.dart';
 
 enum _ImageBackdrop { dark, grid, paper }
@@ -22,6 +23,7 @@ class PreviewScreen extends StatefulWidget {
   final AppController controller;
   final FileRecord file;
   final String? initialLocalPath;
+  final String? heroTag;
 
   const PreviewScreen({
     super.key,
@@ -29,6 +31,7 @@ class PreviewScreen extends StatefulWidget {
     required this.controller,
     required this.file,
     this.initialLocalPath,
+    this.heroTag,
   });
 
   @override
@@ -36,7 +39,7 @@ class PreviewScreen extends StatefulWidget {
 }
 
 class _PreviewScreenState extends State<PreviewScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   String? _localPath;
   String? _expectedDownloadPath;
   bool _checking = true;
@@ -45,15 +48,25 @@ class _PreviewScreenState extends State<PreviewScreen>
   PdfControllerPinch? _pdfController;
   int _currentPage = 1;
   int _totalPages = 0;
+  bool _pdfPillVisible = true;
+  Timer? _pdfHideTimer;
 
   late final TransformationController _transformController;
   late final AnimationController _zoomAnimController;
+  late final AnimationController _chromeEnterCtrl;
+  late final AnimationController _playIconCtrl;
+  late final AnimationController _waveEnterCtrl;
+
   Animation<Matrix4>? _zoomAnimation;
   Offset? _doubleTapLocalPosition;
   double _currentScale = 1.0;
   int _quarterTurns = 0;
   bool _showChrome = true;
+  Timer? _chromeHideTimer;
   _ImageBackdrop _backdrop = _ImageBackdrop.dark;
+
+  // Swipe-down-to-dismiss tracking
+  double _dragDismissDy = 0.0;
 
   int? _imageWidth;
   int? _imageHeight;
@@ -64,6 +77,8 @@ class _PreviewScreenState extends State<PreviewScreen>
   bool _videoReady = false;
   bool _videoMuted = false;
   double _mediaSpeed = 1.0;
+  bool _draggingScrubber = false;
+  double _dragScrubberRatio = 0.0;
 
   AudioPlayer? _audioPlayer;
   StreamSubscription<Duration>? _audioPosSub;
@@ -77,17 +92,30 @@ class _PreviewScreenState extends State<PreviewScreen>
   @override
   void initState() {
     super.initState();
+    _chromeEnterCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 340),
+    )..forward();
+    _playIconCtrl = AnimationController(
+      vsync: this,
+      duration: vaultMotion.fast,
+    );
+    _waveEnterCtrl = AnimationController(
+      vsync: this,
+      duration: vaultMotion.slow,
+    );
     _transformController = TransformationController()
       ..addListener(_onTransformChanged);
     _zoomAnimController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 220),
+      duration: vaultMotion.base,
     )..addListener(() {
         final anim = _zoomAnimation;
         if (anim != null) {
           _transformController.value = anim.value;
         }
       });
+
     widget.controller.addListener(_onControllerUpdate);
     final preset = widget.initialLocalPath;
     if (preset != null && File(preset).existsSync()) {
@@ -101,6 +129,8 @@ class _PreviewScreenState extends State<PreviewScreen>
 
   @override
   void dispose() {
+    _chromeHideTimer?.cancel();
+    _pdfHideTimer?.cancel();
     widget.controller.removeListener(_onControllerUpdate);
     _clearMetadataListener();
     _pdfController?.dispose();
@@ -112,7 +142,46 @@ class _PreviewScreenState extends State<PreviewScreen>
     _transformController.removeListener(_onTransformChanged);
     _transformController.dispose();
     _zoomAnimController.dispose();
+    _chromeEnterCtrl.dispose();
+    _playIconCtrl.dispose();
+    _waveEnterCtrl.dispose();
     super.dispose();
+  }
+
+  void _scheduleChromeAutoHide() {
+    _chromeHideTimer?.cancel();
+    if (!vaultMotion.allowLoops(context)) return;
+    if (_localPath == null || !_showChrome) return;
+    final canHide = isImageFile(widget.file.mimeType, widget.file.name) ||
+        isVideoFile(widget.file.mimeType, widget.file.name);
+    if (!canHide) return;
+    _chromeHideTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted && _showChrome) {
+        setState(() => _showChrome = false);
+      }
+    });
+  }
+
+  void _toggleChrome() {
+    setState(() => _showChrome = !_showChrome);
+    if (_showChrome) {
+      _scheduleChromeAutoHide();
+    } else {
+      _chromeHideTimer?.cancel();
+    }
+  }
+
+  void _onPdfPageChanged(int page) {
+    if (!mounted) return;
+    setState(() {
+      _currentPage = page;
+      _pdfPillVisible = true;
+    });
+    _pdfHideTimer?.cancel();
+    if (!vaultMotion.allowLoops(context)) return;
+    _pdfHideTimer = Timer(const Duration(milliseconds: 1200), () {
+      if (mounted) setState(() => _pdfPillVisible = false);
+    });
   }
 
   void _clearMetadataListener() {
@@ -170,9 +239,12 @@ class _PreviewScreenState extends State<PreviewScreen>
       );
     } else if (isImageFile(widget.file.mimeType, widget.file.name)) {
       _resolveImageMetadata(path);
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => _scheduleChromeAutoHide());
     } else if (isVideoFile(widget.file.mimeType, widget.file.name)) {
       _initVideo(path);
     } else if (isAudioFile(widget.file.mimeType, widget.file.name)) {
+      _waveEnterCtrl.forward(from: 0.0);
       _initAudio(path);
     }
   }
@@ -186,11 +258,18 @@ class _PreviewScreenState extends State<PreviewScreen>
     try {
       await controller.initialize();
       controller.addListener(() {
-        if (mounted) setState(() {});
+        if (!mounted) return;
+        if (controller.value.isPlaying) {
+          _playIconCtrl.forward();
+        } else {
+          _playIconCtrl.reverse();
+        }
+        setState(() {});
       });
       await controller.play();
       if (mounted) {
         setState(() => _videoReady = true);
+        _scheduleChromeAutoHide();
       }
     } catch (e) {
       if (mounted) {
@@ -216,10 +295,14 @@ class _PreviewScreenState extends State<PreviewScreen>
       });
       _audioStateSub = player.playerStateStream.listen((st) {
         if (mounted) {
-          setState(() {
-            _audioPlaying = st.playing &&
-                st.processingState != ProcessingState.completed;
-          });
+          final playing =
+              st.playing && st.processingState != ProcessingState.completed;
+          if (playing) {
+            _playIconCtrl.forward();
+          } else {
+            _playIconCtrl.reverse();
+          }
+          setState(() => _audioPlaying = playing);
         }
       });
       final loadedDur = await player.setFilePath(path);
@@ -303,7 +386,7 @@ class _PreviewScreenState extends State<PreviewScreen>
       widget.controller.downloadFile(widget.file);
       return;
     }
-    HapticFeedback.selectionClick();
+    VaultHaptics.selection();
     await SharePlus.instance.share(
       ShareParams(files: [XFile(path)], text: widget.file.name),
     );
@@ -324,36 +407,37 @@ class _PreviewScreenState extends State<PreviewScreen>
   }
 
   void _animateTransformTo(Matrix4 target) {
-    final duration = vaultMotion(context, 250);
-    if (duration == Duration.zero) {
+    final duration = vaultMotion.duration(context, vaultMotion.base);
+    if (vaultMotion.isReduced(context)) {
       _transformController.value = target;
       return;
     }
+    _zoomAnimController.duration = duration;
     _zoomAnimation = Matrix4Tween(
       begin: _transformController.value,
       end: target,
     ).animate(
       CurvedAnimation(
         parent: _zoomAnimController,
-        curve: Curves.easeOut,
+        curve: vaultMotion.standard,
       ),
     );
     _zoomAnimController.forward(from: 0.0);
   }
 
   void _handleDoubleTap(Size viewport) {
-    HapticFeedback.selectionClick();
+    VaultHaptics.selection();
     if (_currentScale > 1.05) {
       _animateTransformTo(Matrix4.identity());
       return;
     }
     final focal = _doubleTapLocalPosition ??
         Offset(viewport.width / 2, viewport.height / 2);
-    _animateTransformTo(_clampedZoomMatrix(focal, 2.5, viewport));
+    _animateTransformTo(_clampedZoomMatrix(focal, 2.0, viewport));
   }
 
   void _toggleZoomPill(Size viewport) {
-    HapticFeedback.selectionClick();
+    VaultHaptics.selection();
     if ((_currentScale - 1.0).abs() > 0.03) {
       _animateTransformTo(Matrix4.identity());
     } else {
@@ -363,13 +447,13 @@ class _PreviewScreenState extends State<PreviewScreen>
   }
 
   void _rotateImage() {
-    HapticFeedback.selectionClick();
+    VaultHaptics.selection();
     _transformController.value = Matrix4.identity();
     setState(() => _quarterTurns = (_quarterTurns + 1) % 4);
   }
 
   void _cycleBackdrop() {
-    HapticFeedback.selectionClick();
+    VaultHaptics.selection();
     setState(() {
       _backdrop = switch (_backdrop) {
         _ImageBackdrop.dark => _ImageBackdrop.grid,
@@ -380,10 +464,9 @@ class _PreviewScreenState extends State<PreviewScreen>
   }
 
   void _showDarkroomMenu(AppPalette v, bool isAr, Size viewport) {
-    HapticFeedback.selectionClick();
-    showModalBottomSheet<void>(
+    VaultHaptics.selection();
+    showVaultBottomSheet<void>(
       context: context,
-      backgroundColor: Colors.transparent,
       builder: (ctx) => Directionality(
         textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
         child: VaultSheetShell(
@@ -446,7 +529,7 @@ class _PreviewScreenState extends State<PreviewScreen>
 
   void _showDeleteConfirm(AppPalette v, bool isAr) {
     final s = widget.controller.strings;
-    showDialog<void>(
+    showVaultDialog<void>(
       context: context,
       builder: (ctx) => Directionality(
         textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
@@ -485,6 +568,7 @@ class _PreviewScreenState extends State<PreviewScreen>
                       height: 44,
                       label: s.deleteAction,
                       onPressed: () {
+                        VaultHaptics.error();
                         Navigator.pop(ctx);
                         widget.controller.deleteFile(widget.file.id);
                         Navigator.pop(context);
@@ -501,171 +585,235 @@ class _PreviewScreenState extends State<PreviewScreen>
   }
 
   void _showInfoSheet(AppPalette v, bool isAr) {
-    HapticFeedback.lightImpact();
+    VaultHaptics.light();
     final s = widget.controller.strings;
     final chunkBytes = widget.controller.chunkSizeMiB * 1024 * 1024;
     final chunkCount = widget.file.size <= 0
         ? 1
         : (widget.file.size / chunkBytes).ceil().clamp(1, 9999);
     final sha = widget.file.sha256;
-    final truncatedSha =
-        sha.length > 22 ? '${sha.substring(0, 12)}…${sha.substring(sha.length - 10)}' : sha;
+    final truncatedSha = sha.length > 22
+        ? '${sha.substring(0, 12)}…${sha.substring(sha.length - 10)}'
+        : sha;
 
-    showModalBottomSheet<void>(
+    showVaultBottomSheet<void>(
       context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (ctx) => Directionality(
-        textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
-        child: VaultSheetShell(
-          palette: v,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
+      builder: (ctx) {
+        var shaCopied = false;
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) => Directionality(
+            textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
+            child: VaultSheetShell(
+              palette: v,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Container(
-                    width: 42,
-                    height: 42,
-                    decoration: BoxDecoration(
-                      color: v.glassFill,
-                      borderRadius: BorderRadius.circular(VaultRadii.tile),
-                      border: Border.all(color: v.glassBorder),
-                    ),
-                    alignment: Alignment.center,
-                    child: Icon(
-                      iconForMimeOrName(widget.file.mimeType, widget.file.name),
-                      size: 20,
-                      color: v.champagne,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                  VaultStaggeredSlideFade(
+                    index: 0,
+                    dy: 10,
+                    child: Row(
                       children: [
-                        Text(
-                          widget.file.name,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: VaultText.heading(v, isAr, size: 16),
+                        Container(
+                          width: 42,
+                          height: 42,
+                          decoration: BoxDecoration(
+                            color: v.glassFill,
+                            borderRadius: BorderRadius.circular(VaultRadii.tile),
+                            border: Border.all(color: v.glassBorder),
+                          ),
+                          alignment: Alignment.center,
+                          child: Icon(
+                            iconForMimeOrName(
+                                widget.file.mimeType, widget.file.name),
+                            size: 20,
+                            color: v.champagne,
+                          ),
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          widget.file.mimeType,
-                          style: VaultText.mono(v, size: 11, color: v.secondary),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                widget.file.name,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: VaultText.heading(v, isAr, size: 16),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                widget.file.mimeType,
+                                style: VaultText.mono(v,
+                                    size: 11, color: v.secondary),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
                   ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              VaultSurface(
-                palette: v,
-                borderRadius: VaultRadii.md,
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                child: Column(
-                  children: [
-                    _InspectorRow(
+                  const SizedBox(height: 16),
+                  VaultStaggeredSlideFade(
+                    index: 1,
+                    dy: 12,
+                    child: VaultSurface(
                       palette: v,
-                      isArabic: isAr,
-                      label: isAr ? 'الحجم' : 'File size',
-                      value: formatBytes(widget.file.size),
-                      showDivider: false,
-                    ),
-                    if (_imageWidth != null && _imageHeight != null)
-                      _InspectorRow(
-                        palette: v,
-                        isArabic: isAr,
-                        label: isAr ? 'الأبعاد' : 'Dimensions',
-                        value: '$_imageWidth×$_imageHeight px',
-                      ),
-                    _InspectorRow(
-                      palette: v,
-                      isArabic: isAr,
-                      label: s.chunkCountLabel,
-                      value: '$chunkCount',
-                    ),
-                    _InspectorRow(
-                      palette: v,
-                      isArabic: isAr,
-                      label: s.encryptionStatusLabel,
-                      value: widget.file.isEncrypted
-                          ? s.aesVerifiedLabel
-                          : s.keyUnsetBadge,
-                      valueColor:
-                          widget.file.isEncrypted ? v.signalGreen : v.secondary,
-                      leadingIcon: widget.file.isEncrypted
-                          ? Icons.verified_outlined
-                          : null,
-                    ),
-                    if (widget.file.createdAt > 0)
-                      _InspectorRow(
-                        palette: v,
-                        isArabic: isAr,
-                        label: s.uploadDateLabel,
-                        value: formatTimestamp(widget.file.createdAt),
-                      ),
-                  ],
-                ),
-              ),
-              if (sha.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                VaultSurface(
-                  palette: v,
-                  borderRadius: VaultRadii.md,
-                  padding: const EdgeInsets.all(14),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'SHA-256',
-                              style: VaultText.mono(v,
-                                  size: 10.5, color: v.secondary),
+                      borderRadius: VaultRadii.md,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 6),
+                      child: Column(
+                        children: [
+                          _InspectorRow(
+                            palette: v,
+                            isArabic: isAr,
+                            label: isAr ? 'الحجم' : 'File size',
+                            value: formatBytes(widget.file.size),
+                            showDivider: false,
+                          ),
+                          if (_imageWidth != null && _imageHeight != null)
+                            _InspectorRow(
+                              palette: v,
+                              isArabic: isAr,
+                              label: isAr ? 'الأبعاد' : 'Dimensions',
+                              value: '$_imageWidth×$_imageHeight px',
                             ),
-                            const SizedBox(height: 4),
-                            Text(
-                              truncatedSha,
-                              style: VaultText.mono(v, size: 12, color: v.ink),
+                          _InspectorRow(
+                            palette: v,
+                            isArabic: isAr,
+                            label: s.chunkCountLabel,
+                            value: '$chunkCount',
+                          ),
+                          _InspectorRow(
+                            palette: v,
+                            isArabic: isAr,
+                            label: s.encryptionStatusLabel,
+                            value: widget.file.isEncrypted
+                                ? s.aesVerifiedLabel
+                                : s.keyUnsetBadge,
+                            valueColor: widget.file.isEncrypted
+                                ? v.signalGreen
+                                : v.secondary,
+                            drawGreenCheck: widget.file.isEncrypted,
+                          ),
+                          if (widget.file.createdAt > 0)
+                            _InspectorRow(
+                              palette: v,
+                              isArabic: isAr,
+                              label: s.uploadDateLabel,
+                              value: formatTimestamp(widget.file.createdAt),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (sha.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    VaultStaggeredSlideFade(
+                      index: 2,
+                      dy: 14,
+                      child: VaultSurface(
+                        palette: v,
+                        borderRadius: VaultRadii.md,
+                        padding: const EdgeInsets.all(14),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'SHA-256',
+                                    style: VaultText.mono(v,
+                                        size: 10.5, color: v.secondary),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    truncatedSha,
+                                    style: VaultText.mono(v,
+                                        size: 12, color: v.ink),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            VaultTap(
+                              onTap: () {
+                                Clipboard.setData(ClipboardData(text: sha));
+                                VaultHaptics.selection();
+                                setSheetState(() => shaCopied = true);
+                                widget.controller.showToast(
+                                  isAr
+                                      ? 'تم نسخ بصمة SHA-256'
+                                      : 'Copied SHA-256 hash',
+                                );
+                              },
+                              child: AnimatedContainer(
+                                duration: vaultMotion.duration(
+                                    context, vaultMotion.fast),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: shaCopied
+                                      ? v.signalGreenSoft
+                                      : v.glassFill,
+                                  borderRadius:
+                                      BorderRadius.circular(VaultRadii.pill),
+                                  border: Border.all(
+                                    color: shaCopied
+                                        ? v.signalGreen.withValues(alpha: 0.45)
+                                        : v.champagne.withValues(alpha: 0.4),
+                                  ),
+                                ),
+                                child: AnimatedSwitcher(
+                                  duration: vaultMotion.duration(
+                                      context, vaultMotion.fast),
+                                  child: Row(
+                                    key: ValueKey(shaCopied),
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        shaCopied
+                                            ? Icons.check_rounded
+                                            : Icons.copy_rounded,
+                                        size: 12,
+                                        color: shaCopied
+                                            ? v.signalGreen
+                                            : v.champagne,
+                                      ),
+                                      const SizedBox(width: 5),
+                                      Text(
+                                        isAr ? 'نسخ' : 'Copy',
+                                        style: VaultText.monoText(
+                                          v,
+                                          isAr ? 'نسخ' : 'Copy',
+                                          size: 11,
+                                          color: shaCopied
+                                              ? v.signalGreen
+                                              : v.champagne,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(width: 10),
-                      VaultMonoChip(
-                        palette: v,
-                        label: isAr ? 'نسخ' : 'Copy',
-                        icon: Icons.copy_rounded,
-                        textColor: v.champagne,
-                        borderColor: v.champagne.withValues(alpha: 0.4),
-                        onTap: () {
-                          Clipboard.setData(ClipboardData(text: sha));
-                          HapticFeedback.selectionClick();
-                          Navigator.pop(ctx);
-                          widget.controller.showToast(
-                            isAr ? 'تم نسخ بصمة SHA-256' : 'Copied SHA-256 hash',
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    // Always deep Obsidian Darkroom even when app is in Ivory Luxury light mode.
     final v = AppPalette.darkroom();
     final isAr = widget.controller.isArabic;
     final s = widget.controller.strings;
@@ -674,16 +822,22 @@ class _PreviewScreenState extends State<PreviewScreen>
     final isVideo = isVideoFile(widget.file.mimeType, widget.file.name);
     final isAudio = isAudioFile(widget.file.mimeType, widget.file.name);
     final task = widget.controller.latestDownloadTaskFor(widget.file.id);
-    final motion = vaultMotion(context, 250);
+    final fastDur = vaultMotion.duration(context, vaultMotion.fast);
+    final reduced = vaultMotion.isReduced(context);
     final isDecrypting = _checking || (_localPath == null && !_isDemoSample);
     final canHideChrome = _localPath != null && (isImage || isVideo);
+
+    final bgOpacity =
+        (1.0 - (_dragDismissDy.abs() / 420.0)).clamp(0.25, 1.0);
+    final dragScale =
+        reduced ? 1.0 : (1.0 - (_dragDismissDy.abs() / 1200.0)).clamp(0.86, 1.0);
 
     return Directionality(
       textDirection: isAr ? TextDirection.rtl : TextDirection.ltr,
       child: AnnotatedRegion<SystemUiOverlayStyle>(
         value: SystemUiOverlayStyle.light,
         child: Scaffold(
-          backgroundColor: v.canvas,
+          backgroundColor: v.canvas.withValues(alpha: bgOpacity),
           body: LayoutBuilder(
             builder: (context, constraints) {
               final viewport = Size(constraints.maxWidth, constraints.maxHeight);
@@ -691,174 +845,244 @@ class _PreviewScreenState extends State<PreviewScreen>
                   ? 0.0
                   : (task?.progress ?? 0.0).clamp(0.0, 1.0);
 
-              return Stack(
-                children: [
-                  Positioned.fill(
-                    child: _buildBody(
-                      v,
-                      isAr,
-                      isPdf,
-                      isImage,
-                      isVideo,
-                      isAudio,
-                      task,
-                      viewport,
+              return GestureDetector(
+                onVerticalDragUpdate: (_currentScale <= 1.05 && !isPdf)
+                    ? (details) {
+                        setState(() {
+                          _dragDismissDy = (_dragDismissDy + details.delta.dy)
+                              .clamp(-40.0, 320.0);
+                        });
+                      }
+                    : null,
+                onVerticalDragEnd: (_currentScale <= 1.05 && !isPdf)
+                    ? (details) {
+                        if (_dragDismissDy > 120 ||
+                            (details.primaryVelocity ?? 0) > 650) {
+                          Navigator.pop(context);
+                        } else {
+                          setState(() => _dragDismissDy = 0.0);
+                        }
+                      }
+                    : null,
+                child: Stack(
+                  children: [
+                    // Hero-linked center media viewport supporting swipe-down-to-dismiss
+                    Positioned.fill(
+                      child: AnimatedContainer(
+                        duration: _dragDismissDy == 0.0
+                            ? vaultMotion.duration(context, vaultMotion.base)
+                            : Duration.zero,
+                        curve: vaultMotion.standard,
+                        transform: Matrix4.translationValues(
+                            0, _dragDismissDy, 0),
+                        child: Transform.scale(
+                          scale: dragScale,
+                          child: Hero(
+                            tag: widget.heroTag ??
+                                'vault_item_${widget.file.id}',
+                            child: _buildBody(
+                              v,
+                              isAr,
+                              isPdf,
+                              isImage,
+                              isVideo,
+                              isAudio,
+                              task,
+                              viewport,
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
 
-                  // Thin champagne decrypting progress line at the very top
-                  if (isDecrypting &&
-                      !(!_awaitingFreshTask && task?.state == TaskState.failed))
+                    // Decrypting top progress sweep
+                    if (isDecrypting &&
+                        !(!_awaitingFreshTask &&
+                            task?.state == TaskState.failed))
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        child: SafeArea(
+                          bottom: false,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              VaultProgressBar(
+                                palette: v,
+                                progress:
+                                    progressVal > 0 ? progressVal : 0.45,
+                                tone: VaultProgressTone.champagne,
+                                showSweep: true,
+                                height: 3,
+                              ),
+                              const SizedBox(height: 68),
+                              VaultMonoChip(
+                                palette: v,
+                                label: s.decryptingMono,
+                                dotColor: v.champagne,
+                                textColor: v.champagne,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                    // PDF auto-fading page indicator pill with rolling digits
+                    if (isPdf && _totalPages > 0 && _showChrome)
+                      Positioned(
+                        bottom: 94,
+                        left: 0,
+                        right: 0,
+                        child: Center(
+                          child: AnimatedOpacity(
+                            duration: fastDur,
+                            opacity: _pdfPillVisible ? 1.0 : 0.0,
+                            child: VaultSurface(
+                              palette: v,
+                              borderRadius: VaultRadii.pill,
+                              backgroundColor: v.scrim,
+                              borderColor: v.glassTopLeftBorder,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 6),
+                              child: VaultRollingText(
+                                '$_currentPage / $_totalPages',
+                                style: VaultText.mono(v,
+                                    size: 11.5, color: v.ink),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+
+                    // Top bar (16px staggered enter + 180ms auto-hide toggle)
                     Positioned(
                       top: 0,
                       left: 0,
                       right: 0,
-                      child: SafeArea(
-                        bottom: false,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            VaultProgressBar(
-                              palette: v,
-                              progress: progressVal > 0 ? progressVal : 0.35,
-                              tone: VaultProgressTone.champagne,
-                              height: 3,
-                            ),
-                            const SizedBox(height: 68),
-                            VaultMonoChip(
-                              palette: v,
-                              label: s.decryptingMono,
-                              dotColor: v.champagne,
-                              textColor: v.champagne,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                  // Floating PDF page indicator pill ("3 / 24")
-                  if (isPdf && _totalPages > 0 && _showChrome)
-                    Positioned(
-                      bottom: 94,
-                      left: 0,
-                      right: 0,
-                      child: Center(
-                        child: VaultMonoChip(
-                          palette: v,
-                          label: '$_currentPage / $_totalPages',
-                          textColor: v.ink,
-                          backgroundColor: v.scrim,
-                          borderColor: v.glassTopLeftBorder,
-                        ),
-                      ),
-                    ),
-
-                  // Top liquid-glass bar (Back · File Name · Menu)
-                  Positioned(
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    child: IgnorePointer(
-                      ignoring: canHideChrome && !_showChrome,
-                      child: AnimatedSlide(
-                        duration: motion,
-                        curve: Curves.easeOut,
-                        offset: (canHideChrome && !_showChrome)
-                            ? const Offset(0, -1.0)
-                            : Offset.zero,
-                        child: AnimatedOpacity(
-                          duration: motion,
-                          opacity: (canHideChrome && !_showChrome) ? 0.0 : 1.0,
-                          child: SafeArea(
-                            bottom: false,
-                            child: Padding(
-                              padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-                              child: VaultSurface(
-                                palette: v,
-                                borderRadius: VaultRadii.pill,
-                                elevated: true,
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 6),
-                                child: Row(
-                                  children: [
-                                    IconButton(
-                                      onPressed: () => Navigator.pop(context),
-                                      icon: Icon(Icons.arrow_back_rounded,
-                                          color: v.ink, size: 20),
-                                      tooltip: isAr ? 'رجوع' : 'Back',
-                                    ),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Text(
-                                            widget.file.name,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: VaultText.body(
-                                              v,
-                                              isAr,
-                                              size: 14,
-                                              weight: FontWeight.w600,
-                                              applyArabicScale: false,
-                                            ),
-                                          ),
-                                          Row(
+                      child: AnimatedBuilder(
+                        animation: _chromeEnterCtrl,
+                        builder: (context, child) {
+                          final enterT = vaultMotion.standard
+                              .transform(_chromeEnterCtrl.value);
+                          final enterDy =
+                              reduced ? 0.0 : (1.0 - enterT) * -16.0;
+                          return Transform.translate(
+                            offset: Offset(0, enterDy),
+                            child: Opacity(opacity: enterT, child: child),
+                          );
+                        },
+                        child: IgnorePointer(
+                          ignoring: canHideChrome && !_showChrome,
+                          child: AnimatedSlide(
+                            duration: fastDur,
+                            curve: vaultMotion.standard,
+                            offset: (canHideChrome && !_showChrome && !reduced)
+                                ? const Offset(0, -0.35)
+                                : Offset.zero,
+                            child: AnimatedOpacity(
+                              duration: fastDur,
+                              opacity: (canHideChrome && !_showChrome)
+                                  ? 0.0
+                                  : 1.0,
+                              child: SafeArea(
+                                bottom: false,
+                                child: Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                      16, 10, 16, 0),
+                                  child: VaultSurface(
+                                    palette: v,
+                                    borderRadius: VaultRadii.pill,
+                                    elevated: true,
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 6),
+                                    child: Row(
+                                      children: [
+                                        IconButton(
+                                          onPressed: () =>
+                                              Navigator.pop(context),
+                                          icon: Icon(Icons.arrow_back_rounded,
+                                              color: v.ink, size: 20),
+                                          tooltip: isAr ? 'رجوع' : 'Back',
+                                        ),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            mainAxisSize: MainAxisSize.min,
                                             children: [
-                                              if (widget.file.isEncrypted) ...[
-                                                Icon(
-                                                  Icons.lock_outline_rounded,
-                                                  size: 10.5,
-                                                  color: v.signalGreen,
-                                                ),
-                                                const SizedBox(width: 4),
-                                                Text(
-                                                  'AES-256',
-                                                  style: VaultText.mono(
-                                                    v,
-                                                    size: 10,
-                                                    color: v.signalGreen,
-                                                  ),
-                                                ),
-                                                const SizedBox(width: 8),
-                                              ],
                                               Text(
-                                                formatBytes(widget.file.size),
-                                                style: VaultText.mono(v,
-                                                    size: 10,
-                                                    color: v.secondary),
-                                              ),
-                                              if (isImage &&
-                                                  _localPath != null) ...[
-                                                const SizedBox(width: 8),
-                                                GestureDetector(
-                                                  onTap: () =>
-                                                      _toggleZoomPill(viewport),
-                                                  child: Text(
-                                                    '${(_currentScale * 100).round()}%',
-                                                    style: VaultText.mono(
-                                                      v,
-                                                      size: 10,
-                                                      color: v.champagne,
-                                                    ),
-                                                  ),
+                                                widget.file.name,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: VaultText.body(
+                                                  v,
+                                                  isAr,
+                                                  size: 14,
+                                                  weight: FontWeight.w600,
+                                                  applyArabicScale: false,
                                                 ),
-                                              ],
+                                              ),
+                                              Row(
+                                                children: [
+                                                  if (widget
+                                                      .file.isEncrypted) ...[
+                                                    Icon(
+                                                      Icons
+                                                          .lock_outline_rounded,
+                                                      size: 10.5,
+                                                      color: v.signalGreen,
+                                                    ),
+                                                    const SizedBox(width: 4),
+                                                    Text(
+                                                      'AES-256',
+                                                      style: VaultText.mono(
+                                                        v,
+                                                        size: 10,
+                                                        color: v.signalGreen,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 8),
+                                                  ],
+                                                  Text(
+                                                    formatBytes(
+                                                        widget.file.size),
+                                                    style: VaultText.mono(v,
+                                                        size: 10,
+                                                        color: v.secondary),
+                                                  ),
+                                                  if (isImage &&
+                                                      _localPath != null) ...[
+                                                    const SizedBox(width: 8),
+                                                    GestureDetector(
+                                                      onTap: () =>
+                                                          _toggleZoomPill(
+                                                              viewport),
+                                                      child: Text(
+                                                        '${(_currentScale * 100).round()}%',
+                                                        style: VaultText.mono(
+                                                          v,
+                                                          size: 10,
+                                                          color: v.champagne,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ],
+                                              ),
                                             ],
                                           ),
-                                        ],
-                                      ),
+                                        ),
+                                        IconButton(
+                                          onPressed: () => _showDarkroomMenu(
+                                              v, isAr, viewport),
+                                          icon: Icon(Icons.more_horiz_rounded,
+                                              color: v.ink, size: 21),
+                                          tooltip: isAr ? 'خيارات' : 'Menu',
+                                        ),
+                                      ],
                                     ),
-                                    IconButton(
-                                      onPressed: () =>
-                                          _showDarkroomMenu(v, isAr, viewport),
-                                      icon: Icon(Icons.more_horiz_rounded,
-                                          color: v.ink, size: 21),
-                                      tooltip: isAr ? 'خيارات' : 'Menu',
-                                    ),
-                                  ],
+                                  ),
                                 ),
                               ),
                             ),
@@ -866,82 +1090,103 @@ class _PreviewScreenState extends State<PreviewScreen>
                         ),
                       ),
                     ),
-                  ),
 
-                  // Bottom liquid-glass bar (Info · Download · Share · Delete) + swipe-up trigger
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    child: IgnorePointer(
-                      ignoring: canHideChrome && !_showChrome,
-                      child: AnimatedSlide(
-                        duration: motion,
-                        curve: Curves.easeOut,
-                        offset: (canHideChrome && !_showChrome)
-                            ? const Offset(0, 1.0)
-                            : Offset.zero,
-                        child: AnimatedOpacity(
-                          duration: motion,
-                          opacity: (canHideChrome && !_showChrome) ? 0.0 : 1.0,
-                          child: SafeArea(
-                            top: false,
-                            child: Padding(
-                              padding:
-                                  const EdgeInsets.fromLTRB(24, 0, 24, 16),
-                              child: GestureDetector(
-                                onVerticalDragEnd: (details) {
-                                  if ((details.primaryVelocity ?? 0) < -180) {
-                                    _showInfoSheet(v, isAr);
-                                  }
-                                },
-                                child: Center(
-                                  child: ConstrainedBox(
-                                    constraints:
-                                        const BoxConstraints(maxWidth: 340),
-                                    child: VaultSurface(
-                                      palette: v,
-                                      borderRadius: VaultRadii.pill,
-                                      elevated: true,
-                                      borderColor: v.glassTopLeftBorder,
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 10, vertical: 8),
-                                      child: Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.spaceEvenly,
-                                        children: [
-                                          VaultQuickActionCircle(
-                                            palette: v,
-                                            tone: VaultQuickTone.champagne,
-                                            icon: Icons.info_outline_rounded,
-                                            tooltip: s.infoLabel,
-                                            onTap: () =>
-                                                _showInfoSheet(v, isAr),
+                    // Bottom bar (staggered 60ms later + swipe-up triggers Info sheet)
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      child: AnimatedBuilder(
+                        animation: _chromeEnterCtrl,
+                        builder: (context, child) {
+                          final enterT = const Interval(
+                            0.18,
+                            1.0,
+                            curve: Cubic(0.16, 1.0, 0.3, 1.0),
+                          ).transform(_chromeEnterCtrl.value);
+                          final enterDy =
+                              reduced ? 0.0 : (1.0 - enterT) * 16.0;
+                          return Transform.translate(
+                            offset: Offset(0, enterDy),
+                            child: Opacity(opacity: enterT, child: child),
+                          );
+                        },
+                        child: IgnorePointer(
+                          ignoring: canHideChrome && !_showChrome,
+                          child: AnimatedSlide(
+                            duration: fastDur,
+                            curve: vaultMotion.standard,
+                            offset: (canHideChrome && !_showChrome && !reduced)
+                                ? const Offset(0, 0.35)
+                                : Offset.zero,
+                            child: AnimatedOpacity(
+                              duration: fastDur,
+                              opacity: (canHideChrome && !_showChrome)
+                                  ? 0.0
+                                  : 1.0,
+                              child: SafeArea(
+                                top: false,
+                                child: Padding(
+                                  padding:
+                                      const EdgeInsets.fromLTRB(24, 0, 24, 16),
+                                  child: GestureDetector(
+                                    onVerticalDragEnd: (details) {
+                                      if ((details.primaryVelocity ?? 0) <
+                                          -180) {
+                                        _showInfoSheet(v, isAr);
+                                      }
+                                    },
+                                    child: Center(
+                                      child: ConstrainedBox(
+                                        constraints: const BoxConstraints(
+                                            maxWidth: 340),
+                                        child: VaultSurface(
+                                          palette: v,
+                                          borderRadius: VaultRadii.pill,
+                                          elevated: true,
+                                          borderColor: v.glassTopLeftBorder,
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 10, vertical: 8),
+                                          child: Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceEvenly,
+                                            children: [
+                                              VaultQuickActionCircle(
+                                                palette: v,
+                                                tone: VaultQuickTone.champagne,
+                                                icon:
+                                                    Icons.info_outline_rounded,
+                                                tooltip: s.infoLabel,
+                                                onTap: () =>
+                                                    _showInfoSheet(v, isAr),
+                                              ),
+                                              VaultQuickActionCircle(
+                                                palette: v,
+                                                tone: VaultQuickTone.slate,
+                                                icon: Icons.download_outlined,
+                                                tooltip: s.downloadAction,
+                                                onTap: () => widget.controller
+                                                    .downloadFile(widget.file),
+                                              ),
+                                              VaultQuickActionCircle(
+                                                palette: v,
+                                                tone: VaultQuickTone.mint,
+                                                icon: Icons.ios_share_rounded,
+                                                tooltip: s.shareLabel,
+                                                onTap: _shareFile,
+                                              ),
+                                              VaultQuickActionCircle(
+                                                palette: v,
+                                                tone: VaultQuickTone.coral,
+                                                icon:
+                                                    Icons.delete_outline_rounded,
+                                                tooltip: s.deleteAction,
+                                                onTap: () =>
+                                                    _showDeleteConfirm(v, isAr),
+                                              ),
+                                            ],
                                           ),
-                                          VaultQuickActionCircle(
-                                            palette: v,
-                                            tone: VaultQuickTone.slate,
-                                            icon: Icons.download_outlined,
-                                            tooltip: s.downloadAction,
-                                            onTap: () => widget.controller
-                                                .downloadFile(widget.file),
-                                          ),
-                                          VaultQuickActionCircle(
-                                            palette: v,
-                                            tone: VaultQuickTone.mint,
-                                            icon: Icons.ios_share_rounded,
-                                            tooltip: s.shareLabel,
-                                            onTap: _shareFile,
-                                          ),
-                                          VaultQuickActionCircle(
-                                            palette: v,
-                                            tone: VaultQuickTone.coral,
-                                            icon: Icons.delete_outline_rounded,
-                                            tooltip: s.deleteAction,
-                                            onTap: () =>
-                                                _showDeleteConfirm(v, isAr),
-                                          ),
-                                        ],
+                                        ),
                                       ),
                                     ),
                                   ),
@@ -952,8 +1197,8 @@ class _PreviewScreenState extends State<PreviewScreen>
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               );
             },
           ),
@@ -1001,11 +1246,7 @@ class _PreviewScreenState extends State<PreviewScreen>
                       setState(() => _totalPages = doc.pagesCount);
                     }
                   },
-                  onPageChanged: (page) {
-                    if (mounted) {
-                      setState(() => _currentPage = page);
-                    }
-                  },
+                  onPageChanged: _onPdfPageChanged,
                 ),
               ),
             ),
@@ -1099,19 +1340,19 @@ class _PreviewScreenState extends State<PreviewScreen>
 
   Widget _buildImageStage(AppPalette v, bool isAr, Size viewport) {
     final stageColor = switch (_backdrop) {
-      _ImageBackdrop.dark => v.canvas,
+      _ImageBackdrop.dark => Colors.transparent,
       _ImageBackdrop.grid => v.cardSolid,
       _ImageBackdrop.paper => const Color(0xFFF7F6F3),
     };
 
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
-      onTap: () => setState(() => _showChrome = !_showChrome),
+      onTap: _toggleChrome,
       onDoubleTapDown: (details) =>
           _doubleTapLocalPosition = details.localPosition,
       onDoubleTap: () => _handleDoubleTap(viewport),
       child: AnimatedContainer(
-        duration: vaultMotion(context, 250),
+        duration: vaultMotion.duration(context, vaultMotion.base),
         color: stageColor,
         child: Stack(
           fit: StackFit.expand,
@@ -1130,6 +1371,11 @@ class _PreviewScreenState extends State<PreviewScreen>
               minScale: 0.85,
               maxScale: 6.0,
               boundaryMargin: const EdgeInsets.all(24),
+              onInteractionEnd: (_) {
+                if (_currentScale < 1.0) {
+                  _animateTransformTo(Matrix4.identity());
+                }
+              },
               child: Center(
                 child: RotatedBox(
                   quarterTurns: _quarterTurns,
@@ -1169,14 +1415,16 @@ class _PreviewScreenState extends State<PreviewScreen>
     final dur = initialized ? vc.value.duration : Duration.zero;
     final pos = initialized ? vc.value.position : Duration.zero;
     final totalMs = dur.inMilliseconds;
-    final posMs = totalMs > 0 ? pos.inMilliseconds.clamp(0, totalMs) : 0;
+    final effectiveMs = _draggingScrubber
+        ? (_dragScrubberRatio * totalMs).round()
+        : pos.inMilliseconds.clamp(0, totalMs);
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () => setState(() => _showChrome = !_showChrome),
+      onTap: _toggleChrome,
       onDoubleTap: _toggleVideoPlay,
       child: Container(
-        color: v.canvas,
+        color: Colors.transparent,
         alignment: Alignment.center,
         padding: const EdgeInsets.fromLTRB(12, 82, 12, 110),
         child: _mediaError != null
@@ -1204,7 +1452,6 @@ class _PreviewScreenState extends State<PreviewScreen>
                           child: VideoPlayer(vc),
                         ),
                       ),
-                      // Minimal glass play button
                       if (!vc.value.isPlaying || _showChrome)
                         VaultTap(
                           onTap: _toggleVideoPlay,
@@ -1212,10 +1459,9 @@ class _PreviewScreenState extends State<PreviewScreen>
                             palette: v,
                             borderRadius: VaultRadii.pill,
                             padding: const EdgeInsets.all(18),
-                            child: Icon(
-                              vc.value.isPlaying
-                                  ? Icons.pause_rounded
-                                  : Icons.play_arrow_rounded,
+                            child: AnimatedIcon(
+                              icon: AnimatedIcons.play_pause,
+                              progress: _playIconCtrl,
                               size: 34,
                               color: v.champagne,
                             ),
@@ -1226,68 +1472,95 @@ class _PreviewScreenState extends State<PreviewScreen>
                           left: 8,
                           right: 8,
                           bottom: 8,
-                          child: VaultSurface(
-                            palette: v,
-                            borderRadius: VaultRadii.pill,
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 14, vertical: 6),
-                            child: Row(
-                              children: [
-                                Text(
-                                  _formatMediaDuration(pos),
-                                  style: VaultText.mono(v,
-                                      size: 11, color: v.ink),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (_draggingScrubber)
+                                Padding(
+                                  padding: const EdgeInsets.only(bottom: 8),
+                                  child: VaultMonoChip(
+                                    palette: v,
+                                    label: _formatMediaDuration(
+                                        Duration(milliseconds: effectiveMs)),
+                                    textColor: v.champagne,
+                                  ),
                                 ),
-                                Expanded(
-                                  child: SliderTheme(
-                                    data: SliderTheme.of(context).copyWith(
-                                      trackHeight: 2.5,
-                                      thumbShape: const RoundSliderThumbShape(
-                                          enabledThumbRadius: 5.5),
-                                      activeTrackColor: v.champagne,
-                                      inactiveTrackColor: v.glassBorder,
-                                      thumbColor: v.champagne,
+                              VaultSurface(
+                                palette: v,
+                                borderRadius: VaultRadii.pill,
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 14, vertical: 6),
+                                child: Row(
+                                  children: [
+                                    Text(
+                                      _formatMediaDuration(pos),
+                                      style: VaultText.mono(v,
+                                          size: 11, color: v.ink),
                                     ),
-                                    child: Slider(
-                                      value: totalMs > 0 ? posMs / totalMs : 0.0,
-                                      onChanged: totalMs > 0
-                                          ? (ratio) {
-                                              vc.seekTo(Duration(
-                                                milliseconds:
-                                                    (ratio * totalMs).round(),
-                                              ));
-                                            }
-                                          : null,
+                                    Expanded(
+                                      child: SliderTheme(
+                                        data: SliderTheme.of(context).copyWith(
+                                          trackHeight: 2.5,
+                                          thumbShape: RoundSliderThumbShape(
+                                            enabledThumbRadius:
+                                                _draggingScrubber ? 8.0 : 5.5,
+                                          ),
+                                          activeTrackColor: v.champagne,
+                                          inactiveTrackColor: v.glassBorder,
+                                          thumbColor: v.champagne,
+                                        ),
+                                        child: Slider(
+                                          value: totalMs > 0
+                                              ? effectiveMs / totalMs
+                                              : 0.0,
+                                          onChangeStart: (_) => setState(
+                                              () => _draggingScrubber = true),
+                                          onChanged: totalMs > 0
+                                              ? (ratio) {
+                                                  setState(() =>
+                                                      _dragScrubberRatio =
+                                                          ratio);
+                                                  vc.seekTo(Duration(
+                                                    milliseconds:
+                                                        (ratio * totalMs)
+                                                            .round(),
+                                                  ));
+                                                }
+                                              : null,
+                                          onChangeEnd: (_) => setState(
+                                              () => _draggingScrubber = false),
+                                        ),
+                                      ),
                                     ),
-                                  ),
+                                    Text(
+                                      _formatMediaDuration(dur),
+                                      style: VaultText.mono(v,
+                                          size: 11, color: v.secondary),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    GestureDetector(
+                                      onTap: _toggleVideoMute,
+                                      child: Icon(
+                                        _videoMuted
+                                            ? Icons.volume_off_outlined
+                                            : Icons.volume_up_outlined,
+                                        size: 17,
+                                        color: v.secondary,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    GestureDetector(
+                                      onTap: _cycleVideoSpeed,
+                                      child: Text(
+                                        '${_mediaSpeed == _mediaSpeed.roundToDouble() ? _mediaSpeed.toInt() : _mediaSpeed}x',
+                                        style: VaultText.mono(v,
+                                            size: 11, color: v.champagne),
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                Text(
-                                  _formatMediaDuration(dur),
-                                  style: VaultText.mono(v,
-                                      size: 11, color: v.secondary),
-                                ),
-                                const SizedBox(width: 8),
-                                GestureDetector(
-                                  onTap: _toggleVideoMute,
-                                  child: Icon(
-                                    _videoMuted
-                                        ? Icons.volume_off_outlined
-                                        : Icons.volume_up_outlined,
-                                    size: 17,
-                                    color: v.secondary,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                GestureDetector(
-                                  onTap: _cycleVideoSpeed,
-                                  child: Text(
-                                    '${_mediaSpeed == _mediaSpeed.roundToDouble() ? _mediaSpeed.toInt() : _mediaSpeed}x',
-                                    style: VaultText.mono(v,
-                                        size: 11, color: v.champagne),
-                                  ),
-                                ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
                         ),
                     ],
@@ -1354,29 +1627,41 @@ class _PreviewScreenState extends State<PreviewScreen>
                       ),
                       const SizedBox(height: 22),
 
-                      // Calm waveform visualization
+                      // Waveform bars rise staggered from baseline on load (400ms), fill champagne
                       SizedBox(
                         height: 46,
                         width: double.infinity,
-                        child: CustomPaint(
-                          painter: _CalmWaveformPainter(
-                            progress: progressRatio,
-                            activeColor: v.champagne,
-                            inactiveColor: v.glassBorder,
+                        child: AnimatedBuilder(
+                          animation: _waveEnterCtrl,
+                          builder: (context, _) => CustomPaint(
+                            painter: _CalmWaveformPainter(
+                              progress: progressRatio,
+                              revealT: vaultMotion.isReduced(context)
+                                  ? 1.0
+                                  : vaultMotion.emphasized
+                                      .transform(_waveEnterCtrl.value),
+                              playing: _audioPlaying,
+                              activeColor: v.champagne,
+                              inactiveColor: v.glassBorder,
+                            ),
                           ),
                         ),
                       ),
                       SliderTheme(
                         data: SliderTheme.of(context).copyWith(
                           trackHeight: 2.5,
-                          thumbShape: const RoundSliderThumbShape(
-                              enabledThumbRadius: 5.5),
+                          thumbShape: RoundSliderThumbShape(
+                            enabledThumbRadius:
+                                _draggingScrubber ? 8.0 : 5.5,
+                          ),
                           activeTrackColor: v.champagne,
                           inactiveTrackColor: v.glassBorder,
                           thumbColor: v.champagne,
                         ),
                         child: Slider(
                           value: progressRatio,
+                          onChangeStart: (_) =>
+                              setState(() => _draggingScrubber = true),
                           onChanged: totalMs > 0
                               ? (ratio) {
                                   _audioPlayer?.seek(Duration(
@@ -1384,6 +1669,8 @@ class _PreviewScreenState extends State<PreviewScreen>
                                   ));
                                 }
                               : null,
+                          onChangeEnd: (_) =>
+                              setState(() => _draggingScrubber = false),
                         ),
                       ),
                       Row(
@@ -1391,11 +1678,13 @@ class _PreviewScreenState extends State<PreviewScreen>
                         children: [
                           Text(
                             _formatMediaDuration(_audioPos),
-                            style: VaultText.mono(v, size: 11, color: v.secondary),
+                            style: VaultText.mono(v,
+                                size: 11, color: v.secondary),
                           ),
                           Text(
                             _formatMediaDuration(_audioDur),
-                            style: VaultText.mono(v, size: 11, color: v.secondary),
+                            style: VaultText.mono(v,
+                                size: 11, color: v.secondary),
                           ),
                         ],
                       ),
@@ -1419,7 +1708,7 @@ class _PreviewScreenState extends State<PreviewScreen>
                             onTap: () {
                               final ap = _audioPlayer;
                               if (ap == null) return;
-                              HapticFeedback.selectionClick();
+                              VaultHaptics.selection();
                               if (_audioPlaying) {
                                 ap.pause();
                               } else {
@@ -1434,10 +1723,9 @@ class _PreviewScreenState extends State<PreviewScreen>
                                 shape: BoxShape.circle,
                               ),
                               alignment: Alignment.center,
-                              child: Icon(
-                                _audioPlaying
-                                    ? Icons.pause_rounded
-                                    : Icons.play_arrow_rounded,
+                              child: AnimatedIcon(
+                                icon: AnimatedIcons.play_pause,
+                                progress: _playIconCtrl,
                                 size: 28,
                                 color: v.primaryBtnInk,
                               ),
@@ -1468,7 +1756,7 @@ class _PreviewScreenState extends State<PreviewScreen>
   void _toggleVideoPlay() {
     final vc = _videoController;
     if (vc == null || !_videoReady) return;
-    HapticFeedback.selectionClick();
+    VaultHaptics.selection();
     if (vc.value.isPlaying) {
       vc.pause();
     } else {
@@ -1480,7 +1768,7 @@ class _PreviewScreenState extends State<PreviewScreen>
   void _toggleVideoMute() {
     final vc = _videoController;
     if (vc == null) return;
-    HapticFeedback.selectionClick();
+    VaultHaptics.selection();
     final nextMuted = !_videoMuted;
     vc.setVolume(nextMuted ? 0.0 : 1.0);
     setState(() => _videoMuted = nextMuted);
@@ -1489,7 +1777,7 @@ class _PreviewScreenState extends State<PreviewScreen>
   void _cycleVideoSpeed() {
     final vc = _videoController;
     if (vc == null) return;
-    HapticFeedback.selectionClick();
+    VaultHaptics.selection();
     const speeds = [1.0, 1.25, 1.5, 2.0];
     final next = speeds[(speeds.indexOf(_mediaSpeed) + 1) % speeds.length];
     vc.setPlaybackSpeed(next);
@@ -1545,7 +1833,7 @@ class _InspectorRow extends StatelessWidget {
   final String label;
   final String value;
   final Color? valueColor;
-  final IconData? leadingIcon;
+  final bool drawGreenCheck;
   final bool showDivider;
 
   const _InspectorRow({
@@ -1554,7 +1842,7 @@ class _InspectorRow extends StatelessWidget {
     required this.label,
     required this.value,
     this.valueColor,
-    this.leadingIcon,
+    this.drawGreenCheck = false,
     this.showDivider = true,
   });
 
@@ -1581,10 +1869,12 @@ class _InspectorRow extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (leadingIcon != null) ...[
-                  Icon(leadingIcon,
-                      size: 15, color: valueColor ?? v.signalGreen),
-                  const SizedBox(width: 5),
+                if (drawGreenCheck) ...[
+                  VaultAnimatedDrawCheck(
+                    color: valueColor ?? v.signalGreen,
+                    size: 16,
+                  ),
+                  const SizedBox(width: 6),
                 ],
                 Flexible(
                   child: Text(
@@ -1612,11 +1902,15 @@ class _InspectorRow extends StatelessWidget {
 
 class _CalmWaveformPainter extends CustomPainter {
   final double progress;
+  final double revealT;
+  final bool playing;
   final Color activeColor;
   final Color inactiveColor;
 
   const _CalmWaveformPainter({
     required this.progress,
+    required this.revealT,
+    required this.playing,
     required this.activeColor,
     required this.inactiveColor,
   });
@@ -1626,20 +1920,19 @@ class _CalmWaveformPainter extends CustomPainter {
     const barCount = 36;
     final barW = size.width / (barCount * 1.8);
     final gap = barW * 0.8;
-    final activePaint = Paint()
-      ..color = activeColor
-      ..strokeCap = StrokeCap.round;
-    final inactivePaint = Paint()
-      ..color = inactiveColor
-      ..strokeCap = StrokeCap.round;
+    final activePaint = Paint()..color = activeColor;
+    final inactivePaint = Paint()..color = inactiveColor;
 
     for (var i = 0; i < barCount; i++) {
       final norm = i / barCount;
+      final barReveal = ((revealT - norm * 0.4) / 0.6).clamp(0.0, 1.0);
       final amp = 0.25 +
           0.65 *
               ((math.sin(i * 0.72).abs() * 0.65) +
                   (math.cos(i * 1.35).abs() * 0.35));
-      final barH = (size.height * amp).clamp(6.0, size.height);
+      final playheadPulse = playing && (norm - progress).abs() < 0.06 ? 1.18 : 1.0;
+      final barH =
+          (size.height * amp * barReveal * playheadPulse).clamp(4.0, size.height);
       final x = i * (barW + gap);
       final y = (size.height - barH) / 2;
       final rect = RRect.fromRectAndRadius(
@@ -1654,7 +1947,8 @@ class _CalmWaveformPainter extends CustomPainter {
   @override
   bool shouldRepaint(_CalmWaveformPainter oldDelegate) =>
       oldDelegate.progress != progress ||
-      oldDelegate.activeColor != activeColor;
+      oldDelegate.revealT != revealT ||
+      oldDelegate.playing != playing;
 }
 
 class _CheckerboardPainter extends CustomPainter {

@@ -1,0 +1,1485 @@
+<!doctype html>
+<html lang="ar" dir="ltr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BIG DUCK — Signal Vault Motion Spec &amp; Interactive Prototypes</title>
+  <style>
+    @font-face {
+      font-family: "IBMPlexSans";
+      src: url("../../assets/fonts/IBMPlexSans-Regular.ttf") format("truetype");
+      font-weight: 400;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "IBMPlexSans";
+      src: url("../../assets/fonts/IBMPlexSans-SemiBold.ttf") format("truetype");
+      font-weight: 600;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "IBMPlexSans";
+      src: url("../../assets/fonts/IBMPlexSans-Bold.ttf") format("truetype");
+      font-weight: 700;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "IBMPlexSansArabic";
+      src: url("../../assets/fonts/IBMPlexSansArabic-Regular.ttf") format("truetype");
+      font-weight: 400;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "IBMPlexSansArabic";
+      src: url("../../assets/fonts/IBMPlexSansArabic-SemiBold.ttf") format("truetype");
+      font-weight: 600;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "IBMPlexSansArabic";
+      src: url("../../assets/fonts/IBMPlexSansArabic-Bold.ttf") format("truetype");
+      font-weight: 700;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "IBMPlexMono";
+      src: url("../../assets/fonts/IBMPlexMono-Regular.ttf") format("truetype");
+      font-weight: 400 700;
+      font-style: normal;
+      font-display: swap;
+    }
+
+    :root {
+      --studio-bg: #0b0b0d;
+      --studio-border: rgba(255, 255, 255, 0.1);
+      --studio-ink: #f4f4f6;
+      --studio-sec: #9a9ca6;
+      --studio-muted: #62646e;
+      --studio-champagne: #d9d6cf;
+      --studio-green: #4ade80;
+      --studio-coral: #f87171;
+      --studio-amber: #c9b27c;
+
+      /* vaultMotion CSS tokens scaled dynamically by --motion-scale (1 or 4 for 0.25x slow-mo) */
+      --m-scale: 1;
+      --t-instant: calc(90ms * var(--m-scale));
+      --t-fast: calc(180ms * var(--m-scale));
+      --t-base: calc(250ms * var(--m-scale));
+      --t-slow: calc(400ms * var(--m-scale));
+      --t-ambient: calc(4000ms * var(--m-scale));
+
+      --ease-standard: cubic-bezier(0.2, 0.0, 0.0, 1.0);
+      --ease-emphasized: cubic-bezier(0.16, 1.0, 0.3, 1.0);
+      --ease-exit: cubic-bezier(0.4, 0.0, 1.0, 1.0);
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: radial-gradient(circle at 50% 0%, #14151a 0%, #050506 62%);
+      color: var(--studio-ink);
+      font-family: "IBMPlexSans", "IBMPlexSansArabic", -apple-system, BlinkMacSystemFont, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .mono {
+      font-family: "IBMPlexMono", "IBMPlexSansArabic", monospace;
+      letter-spacing: 0.07em;
+    }
+    [dir="rtl"] .mono {
+      letter-spacing: 0 !important;
+    }
+
+    /* Sticky Top Studio Bar */
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 120;
+      backdrop-filter: blur(28px);
+      -webkit-backdrop-filter: blur(28px);
+      background: rgba(11, 11, 14, 0.84);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 12px 24px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand img { width: 34px; height: 34px; border-radius: 9px; border: 1px solid rgba(255, 255, 255, 0.14); }
+    .brand-title { font-size: 14px; font-weight: 600; color: var(--studio-ink); }
+    .brand-sub { font-size: 11px; color: var(--studio-sec); }
+
+    .nav-links { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .nav-link {
+      font-size: 11.5px;
+      color: var(--studio-sec);
+      text-decoration: none;
+      padding: 5px 10px;
+      border-radius: 999px;
+      border: 1px solid transparent;
+      transition: all 200ms var(--ease-standard);
+    }
+    .nav-link:hover {
+      color: var(--studio-ink);
+      background: rgba(255, 255, 255, 0.06);
+      border-color: rgba(255, 255, 255, 0.1);
+    }
+
+    .controls-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .seg-group {
+      display: inline-flex;
+      background: rgba(120, 124, 135, 0.14);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 999px;
+      padding: 3px;
+      gap: 2px;
+    }
+    .seg-btn {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--studio-sec);
+      font-family: inherit;
+      font-size: 11.5px;
+      padding: 5px 10px;
+      border-radius: 999px;
+      cursor: pointer;
+      transition: all 180ms var(--ease-standard);
+    }
+    .seg-btn.active {
+      background: rgba(255, 255, 255, 0.12);
+      border-color: rgba(217, 214, 207, 0.35);
+      color: var(--studio-champagne);
+      font-weight: 600;
+    }
+
+    .wrap { max-width: 1560px; margin: 0 auto; padding: 30px 24px 96px; }
+    .section { margin-bottom: 68px; scroll-margin-top: 86px; }
+    .section-head {
+      display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 12px;
+      padding-bottom: 14px; margin-bottom: 22px; border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    .section-kicker { font-size: 11px; color: var(--studio-champagne); text-transform: uppercase; margin-bottom: 4px; }
+    .section-title { font-size: 26px; font-weight: 600; margin: 0; letter-spacing: -0.02em; }
+    .section-desc { font-size: 13px; color: var(--studio-sec); max-width: 720px; line-height: 1.55; }
+
+    .panel {
+      background: rgba(120, 124, 135, 0.10);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 24px;
+      padding: 20px;
+      backdrop-filter: blur(22px);
+      -webkit-backdrop-filter: blur(22px);
+    }
+
+    /* Curves & Sandbox */
+    .curves-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .curve-card {
+      background: rgba(20, 21, 26, 0.72);
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      border-radius: 20px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .curve-track {
+      height: 8px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.07);
+      position: relative;
+      overflow: hidden;
+    }
+    .curve-puck {
+      position: absolute;
+      top: 1px;
+      left: 2px;
+      width: 24px;
+      height: 6px;
+      border-radius: 999px;
+      background: var(--studio-champagne);
+      transform: translateX(0);
+    }
+    .btn-mini {
+      background: rgba(217,214,207,0.12);
+      color: var(--studio-champagne);
+      border: 1px solid rgba(217,214,207,0.28);
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: 11px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: transform 90ms var(--ease-standard), background 180ms var(--ease-standard);
+    }
+    .btn-mini:active { transform: scale(0.95); }
+
+    .tokens-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .token-pill {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 16px;
+      padding: 12px 14px;
+    }
+    .sandbox-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 14px;
+    }
+    .sb-box {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 18px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    /* Prototype Studio Layout */
+    .proto-studio {
+      display: grid;
+      grid-template-columns: 310px 415px 1fr;
+      gap: 24px;
+      align-items: start;
+    }
+    @media (max-width: 1200px) {
+      .proto-studio { grid-template-columns: 1fr; }
+    }
+    .flow-list { display: flex; flex-direction: column; gap: 8px; }
+    .flow-item {
+      text-align: start;
+      background: rgba(120,124,135,0.09);
+      border: 1px solid rgba(255,255,255,0.08);
+      color: var(--studio-sec);
+      border-radius: 16px;
+      padding: 12px 14px;
+      cursor: pointer;
+      transition: all var(--t-fast) var(--ease-standard);
+    }
+    .flow-item:hover { background: rgba(120,124,135,0.16); color: var(--studio-ink); }
+    .flow-item.active {
+      background: rgba(217,214,207,0.13);
+      border-color: rgba(217,214,207,0.42);
+      color: var(--studio-ink);
+    }
+    .flow-num { font-size: 10.5px; color: var(--studio-champagne); margin-bottom: 3px; }
+    .flow-name { font-size: 13.5px; font-weight: 600; }
+    .flow-sub { font-size: 11.5px; color: var(--studio-sec); margin-top: 2px; line-height: 1.4; }
+
+    /* iPhone 15 Pro Frame 393x852 */
+    .phone-wrap { display: flex; justify-content: center; }
+    .phone {
+      width: 393px;
+      height: 852px;
+      border-radius: 48px;
+      overflow: hidden;
+      position: relative;
+      border: 7px solid #1e1f24;
+      box-shadow: 0 32px 72px rgba(0, 0, 0, 0.72), 0 0 0 1px rgba(255, 255, 255, 0.14);
+      user-select: none;
+    }
+    .phone.dark {
+      --canvas: #050506;
+      --glow: #14151a;
+      --solid: #1a1a1c;
+      --glass: rgba(120, 124, 135, 0.14);
+      --glass-strong: rgba(130, 134, 145, 0.24);
+      --glass-border: rgba(255, 255, 255, 0.13);
+      --glass-border-hi: rgba(255, 255, 255, 0.25);
+      --ink: #f4f4f6;
+      --sec: #9a9ca6;
+      --muted: #62646e;
+      --champagne: #d9d6cf;
+      --champagne-soft: rgba(217, 214, 207, 0.14);
+      --cta-bg: #d9d6cf;
+      --cta-ink: #050506;
+      --green: #4ade80;
+      --green-soft: rgba(74, 222, 128, 0.15);
+      --coral: #f87171;
+      --coral-soft: rgba(248, 113, 113, 0.16);
+      --amber: #c9b27c;
+      --amber-soft: rgba(201, 178, 124, 0.16);
+      background: radial-gradient(circle at 50% 18%, var(--glow) 0%, var(--canvas) 72%);
+      color: var(--ink);
+    }
+    .phone.light {
+      --canvas: #f7f6f3;
+      --glow: #ffffff;
+      --solid: #efece6;
+      --glass: rgba(255, 255, 255, 0.72);
+      --glass-strong: rgba(255, 255, 255, 0.88);
+      --glass-border: rgba(0, 0, 0, 0.08);
+      --glass-border-hi: rgba(0, 0, 0, 0.18);
+      --ink: #111114;
+      --sec: #5e606a;
+      --muted: #9a9ca6;
+      --champagne: #b89b5e;
+      --champagne-soft: rgba(184, 155, 94, 0.14);
+      --cta-bg: #17181c;
+      --cta-ink: #f7f6f3;
+      --green: #16a34a;
+      --green-soft: rgba(22, 163, 74, 0.14);
+      --coral: #dc2626;
+      --coral-soft: rgba(220, 38, 38, 0.12);
+      --amber: #9e8347;
+      --amber-soft: rgba(158, 131, 71, 0.14);
+      background: linear-gradient(180deg, #ffffff 0%, #f7f6f3 58%);
+      color: var(--ink);
+    }
+
+    .statusbar {
+      position: relative;
+      z-index: 30;
+      height: 50px;
+      padding: 14px 26px 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .dynamic-island {
+      width: 112px; height: 30px; background: #000; border-radius: 999px;
+      position: absolute; left: 50%; transform: translateX(-50%); top: 10px;
+    }
+
+    .screen-stage {
+      position: relative;
+      height: 802px;
+      overflow: hidden;
+      padding: 10px 20px 24px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Reduce Motion override */
+    .reduce-motion *, .reduce-motion *::before, .reduce-motion *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+    }
+    .reduce-motion .motion-tr {
+      transition-duration: 150ms !important;
+      transition-timing-function: ease-out !important;
+      transition-property: opacity !important;
+    }
+
+    /* Reusable Inside-Phone Components */
+    .p-glass {
+      background: var(--glass);
+      border: 1px solid var(--glass-border);
+      backdrop-filter: blur(26px);
+      -webkit-backdrop-filter: blur(26px);
+      border-radius: 24px;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.14);
+      transition: transform var(--t-fast) var(--ease-standard), border-color var(--t-fast) var(--ease-standard), background var(--t-fast) var(--ease-standard), box-shadow var(--t-fast) var(--ease-standard);
+    }
+    .p-glass.clickable { cursor: pointer; }
+    .p-glass.clickable:active {
+      transform: scale(0.97);
+      border-color: var(--glass-border-hi);
+      background: var(--glass-strong);
+    }
+
+    .p-pill-btn {
+      height: 46px;
+      border-radius: 999px;
+      border: none;
+      background: var(--cta-bg);
+      color: var(--cta-ink);
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 600;
+      padding: 0 20px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      cursor: pointer;
+      transition: transform var(--t-instant) var(--ease-standard), opacity var(--t-fast) var(--ease-standard);
+    }
+    .p-pill-btn:active { transform: scale(0.97); opacity: 0.92; }
+    .p-pill-btn.secondary {
+      background: var(--glass);
+      color: var(--ink);
+      border: 1px solid var(--glass-border);
+    }
+    .p-pill-btn.danger {
+      background: var(--coral-soft);
+      color: var(--coral);
+      border: 1px solid rgba(248,113,113,0.35);
+    }
+
+    .p-input {
+      background: var(--glass);
+      border: 1px solid var(--glass-border);
+      border-radius: 14px;
+      padding: 11px 14px;
+      color: var(--ink);
+      font-family: inherit;
+      font-size: 13.5px;
+      width: 100%;
+      outline: none;
+      transition: border-color var(--t-fast) var(--ease-standard), box-shadow var(--t-fast) var(--ease-standard);
+    }
+    .p-input:focus {
+      border-color: var(--champagne);
+      border-width: 1.5px;
+      box-shadow: 0 0 12px rgba(217, 214, 207, 0.22);
+    }
+
+    .p-toggle {
+      width: 48px; height: 28px; border-radius: 999px;
+      background: var(--glass); border: 1px solid var(--glass-border);
+      padding: 3px; position: relative; cursor: pointer;
+      transition: background var(--t-fast) var(--ease-standard), border-color var(--t-fast) var(--ease-standard);
+    }
+    .p-toggle.on { background: var(--champagne-soft); border-color: var(--champagne); }
+    .p-toggle-knob {
+      width: 20px; height: 20px; border-radius: 50%; background: var(--sec);
+      transition: transform var(--t-fast) var(--ease-standard), background var(--t-fast) var(--ease-standard);
+    }
+    .p-toggle.on .p-toggle-knob {
+      background: var(--champagne);
+      transform: translateX(20px) scale(1.04);
+    }
+    [dir="rtl"] .p-toggle.on .p-toggle-knob {
+      transform: translateX(-20px) scale(1.04);
+    }
+
+    .p-seg {
+      display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
+      background: var(--glass); border: 1px solid var(--glass-border);
+      border-radius: 999px; padding: 3px; position: relative;
+    }
+    .p-seg-thumb {
+      position: absolute; top: 3px; bottom: 3px;
+      border-radius: 999px; background: var(--glass-strong);
+      border: 1px solid rgba(217,214,207,0.35);
+      transition: transform var(--t-base) var(--ease-emphasized);
+    }
+    .p-seg button {
+      position: relative; z-index: 2; border: none; background: transparent;
+      color: var(--sec); font-family: inherit; font-size: 11.5px; padding: 7px 6px;
+      cursor: pointer; transition: color var(--t-fast) var(--ease-standard);
+    }
+    .p-seg button.active { color: var(--champagne); font-weight: 600; }
+
+    .p-fab {
+      width: 52px; height: 52px; border-radius: 50%;
+      background: var(--cta-bg); color: var(--cta-ink);
+      border: none; display: inline-flex; align-items: center; justify-content: center;
+      font-size: 24px; cursor: pointer; box-shadow: 0 12px 26px rgba(0,0,0,0.42);
+      transition: transform var(--t-fast) var(--ease-emphasized);
+    }
+    .p-fab.open svg { transform: rotate(45deg); }
+    .p-fab svg { transition: transform var(--t-fast) var(--ease-emphasized); }
+
+    .p-nav-bar {
+      position: absolute; bottom: 18px; left: 28px; right: 28px; height: 64px;
+      border-radius: 999px; background: var(--glass-strong);
+      border: 1px solid var(--glass-border);
+      backdrop-filter: blur(28px);
+      display: grid; grid-template-columns: repeat(4, 1fr); align-items: center; padding: 6px;
+      transition: opacity var(--t-fast) var(--ease-standard), transform var(--t-fast) var(--ease-standard);
+      z-index: 15;
+    }
+    .p-nav-bar.dimmed { opacity: 0.35; pointer-events: none; transform: translateY(8px); }
+    .p-nav-pill {
+      position: absolute; top: 6px; bottom: 6px; width: calc(25% - 4px); left: 6px;
+      border-radius: 999px; background: var(--cta-bg);
+      transition: transform var(--t-base) var(--ease-emphasized);
+    }
+    [dir="rtl"] .p-nav-pill { left: auto; right: 6px; }
+    .p-nav-item {
+      position: relative; z-index: 2; border: none; background: transparent;
+      color: var(--sec); display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 2px; font-size: 11px; cursor: pointer;
+      transition: color var(--t-fast) var(--ease-standard);
+    }
+    .p-nav-item.active { color: var(--cta-ink); }
+
+    /* Keyframes inside prototypes */
+    @keyframes vaultFloat {
+      0%, 100% { transform: translateY(-4px); }
+      50% { transform: translateY(4px); }
+    }
+    @keyframes orbBreathe {
+      0%, 100% { transform: scale(1); border-color: rgba(217,214,207,0.22); }
+      50% { transform: scale(1.06); border-color: rgba(217,214,207,0.52); }
+    }
+    @keyframes shake3 {
+      0%, 100% { transform: translateX(0); }
+      18% { transform: translateX(-7px); }
+      36% { transform: translateX(7px); }
+      54% { transform: translateX(-5px); }
+      72% { transform: translateX(5px); }
+      88% { transform: translateX(-3px); }
+    }
+    @keyframes barSweep {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(220%); }
+    }
+    @keyframes chunkPulse {
+      0%, 100% { opacity: 0.45; }
+      50% { opacity: 1.0; }
+    }
+    @keyframes dotRing {
+      0% { transform: scale(1); opacity: 0.7; }
+      100% { transform: scale(1.8); opacity: 0; }
+    }
+    @keyframes drawCheck {
+      from { stroke-dashoffset: 36; }
+      to { stroke-dashoffset: 0; }
+    }
+    @keyframes rowStaggerIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes slideStepIn {
+      from { opacity: 0; transform: translateX(var(--slide-dir, 24px)); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    .anim-float { animation: vaultFloat calc(5000ms * var(--m-scale)) ease-in-out infinite; }
+    .anim-orb { animation: orbBreathe calc(4000ms * var(--m-scale)) ease-in-out infinite; }
+    .anim-shake { animation: shake3 calc(300ms * var(--m-scale)) ease-out 1; }
+    .anim-chunk-pulse { animation: chunkPulse calc(1200ms * var(--m-scale)) ease-in-out infinite; }
+    .anim-draw-check path {
+      stroke-dasharray: 36;
+      stroke-dashoffset: 36;
+      animation: drawCheck var(--t-base) var(--ease-standard) forwards;
+    }
+
+    /* Circular Reveal Layer inside Flow 7 */
+    .reveal-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 40;
+      pointer-events: none;
+    }
+
+    /* Toast */
+    .p-toast {
+      position: absolute;
+      top: 56px; left: 20px; right: 20px; z-index: 60;
+      background: var(--solid); border: 1px solid var(--glass-border-hi);
+      border-radius: 999px; padding: 10px 14px;
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      font-size: 12.5px; box-shadow: 0 16px 36px rgba(0,0,0,0.45);
+      transform: translateY(-16px); opacity: 0; pointer-events: none;
+      transition: transform var(--t-base) var(--ease-emphasized), opacity var(--t-fast) var(--ease-exit);
+    }
+    .p-toast.show { transform: translateY(0); opacity: 1; pointer-events: auto; }
+
+    /* Telemetry Inspector Card */
+    .telemetry-card {
+      background: rgba(20,21,26,0.78);
+      border: 1px solid rgba(255,255,255,0.09);
+      border-radius: 22px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .tel-log {
+      background: rgba(5,5,6,0.75);
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 14px;
+      padding: 12px;
+      font-size: 11px;
+      color: var(--studio-sec);
+      max-height: 240px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    /* Handoff & Audit Tables */
+    .table-wrap {
+      overflow-x: auto;
+      border-radius: 20px;
+      border: 1px solid rgba(255,255,255,0.09);
+      background: rgba(14,15,18,0.85);
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 12.5px; text-align: left; }
+    th, td { padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,0.07); vertical-align: top; }
+    th {
+      font-family: "IBMPlexMono", monospace; font-size: 11px; text-transform: uppercase;
+      letter-spacing: 0.08em; color: var(--studio-champagne); background: rgba(255,255,255,0.03);
+    }
+    tr:last-child td { border-bottom: none; }
+    .badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 600;
+    }
+    .b-low { background: rgba(74,222,128,0.14); color: var(--studio-green); }
+    .b-warn { background: rgba(201,178,124,0.18); color: var(--studio-amber); border: 1px solid rgba(201,178,124,0.35); }
+    .b-code {
+      font-family: "IBMPlexMono", monospace; font-size: 11px;
+      background: rgba(255,255,255,0.06); padding: 2px 6px; border-radius: 6px; color: var(--studio-champagne);
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="../../assets/icon.png" alt="BIG DUCK" />
+      <div>
+        <div class="brand-title">BIG DUCK — Signal Vault Motion &amp; Micro-Interactions</div>
+        <div class="brand-sub mono">vaultMotion · Cubic-Bézier Curves · 7 Interactive Flows · Flutter Handoff &amp; GPU Audit</div>
+      </div>
+    </div>
+
+    <nav class="nav-links">
+      <a class="nav-link" href="index.html">← Style Board</a>
+      <a class="nav-link" href="#sec-curves">01 Tokens &amp; Curves</a>
+      <a class="nav-link" href="#sec-protos">02 Interactive Prototypes</a>
+      <a class="nav-link" href="#sec-handoff">03 Flutter Handoff</a>
+      <a class="nav-link" href="#sec-loop-cost">04 Loop CPU/GPU Audit</a>
+    </nav>
+
+    <div class="controls-bar">
+      <div class="seg-group" id="themeCtrl">
+        <button class="seg-btn active" data-val="dark">Obsidian Dark</button>
+        <button class="seg-btn" data-val="light">Ivory Light</button>
+      </div>
+      <div class="seg-group" id="dirCtrl">
+        <button class="seg-btn active" data-val="rtl">العربية RTL</button>
+        <button class="seg-btn" data-val="ltr">English LTR</button>
+      </div>
+      <div class="seg-group" id="reduceCtrl">
+        <button class="seg-btn active" data-val="off">Full Motion</button>
+        <button class="seg-btn" data-val="on">Reduce Motion (150ms)</button>
+      </div>
+      <div class="seg-group" id="speedCtrl">
+        <button class="seg-btn active" data-val="1">1×</button>
+        <button class="seg-btn" data-val="4">0.25× Inspect</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <!-- 01 TOKENS & BEZIER CURVES -->
+    <section class="section" id="sec-curves">
+      <div class="section-head">
+        <div>
+          <div class="section-kicker mono">01 · VAULTMOTION TOKENS &amp; EASING CURVES</div>
+          <h2 class="section-title">Motion Curves, Timing Scale &amp; Global Micro-Interactions</h2>
+        </div>
+        <p class="section-desc">
+          Quiet luxury motion translates directly into <span class="b-code">vaultMotion</span> in <span class="b-code">lib/theme/app_theme.dart</span>.
+          Click <strong>Replay</strong> on any curve or switch <strong>Reduce Motion</strong> above to observe the <span class="b-code">150ms</span> fade fallback.
+        </p>
+      </div>
+
+      <div class="tokens-row">
+        <div class="token-pill"><div class="mono" style="font-size:11px;color:var(--studio-champagne);">instant</div><div style="font-size:20px;font-weight:600;">90ms</div><div style="font-size:11.5px;color:var(--studio-sec);">Press 0.97 &amp; long-press 1.02</div></div>
+        <div class="token-pill"><div class="mono" style="font-size:11px;color:var(--studio-champagne);">reducedFade</div><div style="font-size:20px;font-weight:600;">150ms</div><div style="font-size:11.5px;color:var(--studio-sec);">Global Reduce Motion fallback</div></div>
+        <div class="token-pill"><div class="mono" style="font-size:11px;color:var(--studio-champagne);">fast</div><div style="font-size:20px;font-weight:600;">180ms</div><div style="font-size:11.5px;color:var(--studio-sec);">Release, toggles, chips, icons</div></div>
+        <div class="token-pill"><div class="mono" style="font-size:11px;color:var(--studio-champagne);">base</div><div style="font-size:20px;font-weight:600;">250ms</div><div style="font-size:11.5px;color:var(--studio-sec);">Capsule, progress, stroke check</div></div>
+        <div class="token-pill"><div class="mono" style="font-size:11px;color:var(--studio-champagne);">slow / ambient</div><div style="font-size:20px;font-weight:600;">400ms / 4s</div><div style="font-size:11.5px;color:var(--studio-sec);">Sheets, reveal, breathing orb</div></div>
+        <div class="token-pill"><div class="mono" style="font-size:11px;color:var(--studio-champagne);">distances / stagger</div><div style="font-size:20px;font-weight:600;">8 · 16 · 24px</div><div style="font-size:11.5px;color:var(--studio-sec);">30ms per item, capped at 8</div></div>
+      </div>
+
+      <div class="curves-grid" id="curvesGrid"></div>
+
+      <div class="panel">
+        <div class="mono" style="font-size:11px;color:var(--studio-champagne);margin-bottom:12px;">GLOBAL MICRO-INTERACTIONS SANDBOX (TEST PRESS, FOCUS, TOGGLE, SEGMENT &amp; TOAST)</div>
+        <div class="sandbox-grid">
+          <div class="sb-box phone dark" style="height:auto;width:auto;border:1px solid rgba(255,255,255,0.09);box-shadow:none;border-radius:18px;" id="sbPressCard">
+            <div class="mono" style="font-size:10.5px;color:var(--sec);">1 · PRESS &amp; BUTTON STATES</div>
+            <button class="p-pill-btn" id="sbBtn" type="button">Encrypt &amp; Upload</button>
+            <div class="p-glass clickable" style="padding:10px 12px;border-radius:14px;font-size:12px;">Tap surface: 0.97 scale · +6% sheen</div>
+          </div>
+          <div class="sb-box phone dark" style="height:auto;width:auto;border:1px solid rgba(255,255,255,0.09);box-shadow:none;border-radius:18px;" id="sbInputCard">
+            <div class="mono" style="font-size:10.5px;color:var(--sec);">2 · FOCUS RING (BLUR 12 CHAMPAGNE)</div>
+            <input class="p-input" placeholder="Click to focus vault key..." />
+            <div style="display:flex;align-items:center;justify-content:space-between;">
+              <span style="font-size:12px;color:var(--sec);">Toggle 1.06 pulse</span>
+              <div class="p-toggle on" id="sbToggle" role="switch"><div class="p-toggle-knob"></div></div>
+            </div>
+          </div>
+          <div class="sb-box phone dark" style="height:auto;width:auto;border:1px solid rgba(255,255,255,0.09);box-shadow:none;border-radius:18px;" id="sbSegCard">
+            <div class="mono" style="font-size:10.5px;color:var(--sec);">3 · SLIDING CAPSULE + HAPTICS</div>
+            <div class="p-seg" id="sbSeg">
+              <div class="p-seg-thumb" style="width:33%;transform:translateX(0%);"></div>
+              <button class="active" data-i="0" type="button">64 MiB</button>
+              <button data-i="1" type="button">256 MiB</button>
+              <button data-i="2" type="button">512 MiB</button>
+            </div>
+            <button class="btn-mini" id="sbToastBtn" type="button">Trigger Top Toast + Undo</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 02 7 INTERACTIVE PROTOTYPE FLOWS -->
+    <section class="section" id="sec-protos">
+      <div class="section-head">
+        <div>
+          <div class="section-kicker mono">02 · INTERACTIVE PROTOTYPES (393×852 · 7 SCREEN FLOWS)</div>
+          <h2 class="section-title">Playable Signal Vault Flows</h2>
+        </div>
+        <p class="section-desc">
+          Select any flow on the left and interact directly inside the iPhone 15 Pro viewport (or use step triggers in the inspector).
+          Supports <strong>Obsidian Dark</strong> / <strong>Ivory Light</strong>, <strong>Arabic RTL</strong> / <strong>English LTR</strong> mirroring, and <strong>Reduce Motion</strong>.
+        </p>
+      </div>
+
+      <div class="proto-studio">
+        <div class="flow-list" id="flowList"></div>
+
+        <div class="phone-wrap">
+          <div class="phone dark" id="phoneFrame" dir="rtl">
+            <div class="statusbar">
+              <span class="mono" style="font-size:11.5px;">9:41</span>
+              <div class="dynamic-island"></div>
+              <span class="mono" style="font-size:10.5px;display:inline-flex;align-items:center;gap:6px;">
+                <span style="width:7px;height:7px;border-radius:50%;background:var(--green);display:inline-block;"></span>MTProto
+              </span>
+            </div>
+            <div class="p-toast" id="phoneToast">
+              <span style="display:inline-flex;align-items:center;gap:8px;">
+                <span style="width:7px;height:7px;border-radius:50%;background:var(--green);display:inline-block;"></span>
+                <span id="toastMsg">Synced</span>
+              </span>
+              <button class="btn-mini" id="toastUndoBtn" style="display:none;" type="button">Undo</button>
+            </div>
+            <div class="screen-stage" id="phoneStage"></div>
+          </div>
+        </div>
+
+        <div class="telemetry-card">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span class="mono" style="font-size:11px;color:var(--studio-champagne);">MOTION INSPECTOR &amp; STEP CONTROLS</span>
+            <button class="btn-mini" id="resetFlowBtn" type="button">Reset Flow</button>
+          </div>
+          <div id="flowMeta" style="font-size:13px;color:var(--studio-sec);line-height:1.5;"></div>
+          <div id="flowQuickActions" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
+          <div>
+            <div class="mono" style="font-size:10.5px;color:var(--studio-champagne);margin-bottom:6px;">LIVE EVENT LOG (TOKEN · CURVE · HAPTIC)</div>
+            <div class="tel-log mono" id="telLog"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 03 FLUTTER HANDOFF TABLE -->
+    <section class="section" id="sec-handoff">
+      <div class="section-head">
+        <div>
+          <div class="section-kicker mono">03 · FLUTTER IMPLEMENTATION HANDOFF</div>
+          <h2 class="section-title">Per-Animation Flutter Engineering Specification</h2>
+        </div>
+        <input class="p-input" id="handoffFilter" style="max-width:280px;" placeholder="Filter screen or trigger..." />
+      </div>
+      <div class="table-wrap">
+        <table id="handoffTable">
+          <thead>
+            <tr>
+              <th>Screen / Element</th>
+              <th>Trigger</th>
+              <th>Flutter API / Widget</th>
+              <th>Properties</th>
+              <th>Duration</th>
+              <th>Curve</th>
+              <th>Delay / Stagger</th>
+              <th>Loop</th>
+              <th>Haptic</th>
+              <th>Reduce-Motion Fallback</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 04 LOOPING ANIMATIONS CPU/GPU COST AUDIT -->
+    <section class="section" id="sec-loop-cost">
+      <div class="section-head">
+        <div>
+          <div class="section-kicker mono">04 · PERFORMANCE &amp; BATTERY AUDIT</div>
+          <h2 class="section-title">Looping Animations CPU / GPU Cost Table</h2>
+        </div>
+        <p class="section-desc">
+          All repeating animations are guarded by <span class="b-code">vaultMotion.allowLoops(context)</span>. Notice blur-adjacent surfaces isolate static <span class="b-code">BackdropFilter</span> layers outside repainting children to sustain 60fps.
+        </p>
+      </div>
+      <div class="table-wrap">
+        <table id="loopTable">
+          <thead>
+            <tr>
+              <th>Animation</th>
+              <th>Screen</th>
+              <th>Animated Properties</th>
+              <th>Layering / Boundary</th>
+              <th>Blur Warning Flag</th>
+              <th>Idle Impact</th>
+              <th>Reduce-Motion Stop</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const state = {
+      theme: "dark",
+      dir: "rtl",
+      reduceMotion: false,
+      speedScale: 1,
+      activeFlow: 0,
+      flowState: {}
+    };
+
+    const $ = sel => document.querySelector(sel);
+    const $$ = sel => Array.from(document.querySelectorAll(sel));
+    const isAr = () => state.dir === "rtl";
+
+    function logMotion(event, token, haptic = "—") {
+      const box = $("#telLog");
+      const row = document.createElement("div");
+      const now = new Date().toLocaleTimeString("en-US", { hour12: false, minute: "2-digit", second: "2-digit" });
+      row.innerHTML = `<span style="color:var(--studio-champagne);">[${now}]</span> ${event} <span style="color:var(--studio-green);">${token}</span> <span style="color:var(--studio-muted);">Haptic: ${haptic}</span>`;
+      box.prepend(row);
+      while (box.children.length > 14) box.removeChild(box.lastChild);
+    }
+
+    // 1. Curve Charts
+    const CURVES = [
+      { id: "standard", title: "standard", css: "cubic-bezier(0.2, 0.0, 0.0, 1.0)", flutter: "Cubic(0.2, 0.0, 0.0, 1.0)", ms: 250, pts: "M 10 90 C 28 90, 10 10, 130 10", p1: [28,90], p2: [10,10], desc: "Default state deceleration across cards, toggles, and scrolling." },
+      { id: "emphasized", title: "emphasized", css: "cubic-bezier(0.16, 1.0, 0.3, 1.0)", flutter: "Cubic(0.16, 1.0, 0.3, 1.0)", ms: 400, pts: "M 10 90 C 26 10, 46 10, 130 10", p1: [26,10], p2: [46,10], desc: "Sheets, dialogs, theme reveal, splash, and sliding nav capsule." },
+      { id: "exit", title: "exit", css: "cubic-bezier(0.4, 0.0, 1.0, 1.0)", flutter: "Cubic(0.4, 0.0, 1.0, 1.0)", ms: 180, pts: "M 10 90 C 58 90, 130 90, 130 10", p1: [58,90], p2: [130,90], desc: "Crisp acceleration out for dismissals, toasts, and outgoing steps." },
+      { id: "linear", title: "linear", css: "linear", flutter: "Curves.linear", ms: 1400, pts: "M 10 90 L 130 10", p1: [50,63], p2: [90,37], desc: "Constant velocity solely for shimmers, sweeps, and decrypt line." }
+    ];
+
+    function renderCurves() {
+      const grid = $("#curvesGrid");
+      grid.innerHTML = CURVES.map(c => `
+        <div class="curve-card">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <div>
+              <div class="mono" style="font-size:13px;color:var(--studio-champagne);font-weight:600;">${c.title}</div>
+              <div class="mono" style="font-size:10.5px;color:var(--studio-sec);">${c.ms}ms · ${c.flutter}</div>
+            </div>
+            <button class="btn-mini" onclick="replayCurve('${c.id}')" type="button">Replay</button>
+          </div>
+          <svg viewBox="0 0 140 100" style="width:100%;height:110px;background:rgba(255,255,255,0.02);border-radius:12px;border:1px solid rgba(255,255,255,0.05);">
+            <line x1="10" y1="90" x2="130" y2="90" stroke="rgba(255,255,255,0.1)" stroke-dasharray="3 3" />
+            <line x1="10" y1="10" x2="130" y2="10" stroke="rgba(255,255,255,0.1)" stroke-dasharray="3 3" />
+            <line x1="10" y1="90" x2="${c.p1[0]}" y2="${c.p1[1]}" stroke="rgba(154,156,166,0.45)" stroke-width="1" />
+            <line x1="130" y1="10" x2="${c.p2[0]}" y2="${c.p2[1]}" stroke="rgba(154,156,166,0.45)" stroke-width="1" />
+            <path d="${c.pts}" fill="none" stroke="#D9D6CF" stroke-width="2.4" stroke-linecap="round" />
+            <circle cx="${c.p1[0]}" cy="${c.p1[1]}" r="3" fill="#4ADE80" />
+            <circle cx="${c.p2[0]}" cy="${c.p2[1]}" r="3" fill="#4ADE80" />
+          </svg>
+          <div class="curve-track"><div class="curve-puck" id="puck-${c.id}"></div></div>
+          <div style="font-size:12px;color:var(--studio-sec);">${c.desc}</div>
+        </div>
+      `).join("");
+    }
+    window.replayCurve = id => {
+      const c = CURVES.find(x => x.id === id);
+      const puck = document.getElementById("puck-" + id);
+      if (!c || !puck) return;
+      const ms = state.reduceMotion ? 150 : c.ms * state.speedScale;
+      puck.style.transition = "none";
+      puck.style.transform = "translateX(0px)";
+      puck.offsetWidth;
+      puck.style.transition = `transform ${ms}ms ${state.reduceMotion ? "ease-out" : c.css}`;
+      puck.style.transform = `translateX(${puck.parentElement.clientWidth - 28}px)`;
+      logMotion(`Curve "${c.id}"`, `${ms}ms ${c.title}`, "—");
+    };
+
+    // Sandbox listeners
+    $("#sbBtn").addEventListener("click", () => {
+      const b = $("#sbBtn");
+      b.innerHTML = `<span class="mono" style="font-size:12px;">Encrypting…</span>`;
+      setTimeout(() => {
+        b.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" class="anim-draw-check"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg> Verified`;
+        logMotion("VaultPillButton", "90ms scale + 250ms draw check", "success");
+        setTimeout(() => b.textContent = "Encrypt & Upload", 1200);
+      }, 650);
+    });
+    $("#sbToggle").addEventListener("click", () => {
+      $("#sbToggle").classList.toggle("on");
+      logMotion("VaultToggle", "180ms standard · knob 1.06 pulse", "light");
+    });
+    $("#sbSeg").addEventListener("click", e => {
+      const btn = e.target.closest("button");
+      if (!btn) return;
+      $$("#sbSeg button").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      const i = Number(btn.dataset.i);
+      const mult = isAr() ? -i : i;
+      $("#sbSeg .p-seg-thumb").style.transform = `translateX(${mult * 100}%)`;
+      logMotion("VaultSegmentedControl", "250ms emphasized capsule", "selection");
+    });
+
+    let toastTimer = null;
+    function showPhoneToast(msg, hasUndo = false, onUndo = null) {
+      const toast = $("#phoneToast");
+      $("#toastMsg").textContent = msg;
+      const u = $("#toastUndoBtn");
+      u.style.display = hasUndo ? "inline-flex" : "none";
+      u.textContent = isAr() ? "تراجع" : "Undo";
+      u.onclick = () => {
+        toast.classList.remove("show");
+        if (onUndo) onUndo();
+      };
+      toast.classList.add("show");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.remove("show"), 2600);
+    }
+    $("#sbToastBtn").addEventListener("click", () => {
+      showPhoneToast(isAr() ? "تم حذف عنصر واحد" : "Deleted 1 item", true, () => {
+        logMotion("Toast Undo", "Restored item · 180ms exit", "success");
+      });
+      logMotion("Top Toast Entry", "250ms emphasized + 2.5s stay", "success");
+    });
+
+    // 2. 7 Playable Interactive Prototypes
+    const FLOWS = [
+      { id: "auth", num: "01", titleAr: "التشغيل والمصادقة -> الملفات", titleEn: "Auth (4 Steps) -> Files",
+        desc: "Splash 0.9->1.0 glow · Floating duck (±4px/5s) · Directional ±24px steps & tape fill · OTP 1.08 pop & 3×±6px shake · Staggered Files launch." },
+      { id: "lock", num: "02", titleAr: "قفل البصمة -> فتح أو رفض", titleEn: "Lock -> Unlock & Failure",
+        desc: "4s breathing biometric orb (1.0->1.06) · Failure 3×±8px coral shake + error haptic · Success green ring + drawn check + 1.0->1.4 fade exit." },
+      { id: "preview", num: "03", titleAr: "مجلد -> Darkroom -> معلومات", titleEn: "Files -> Preview -> Info Sheet",
+        desc: "Directional folder slide + breadcrumb pop · Hero Darkroom transition (#050506) · Decrypt line · Chrome toggle · 40ms Info sheet & Copy/Check swap." },
+      { id: "transfers", num: "04", titleAr: "زر + -> الرفع -> التحويلات المباشرة", titleEn: "+ Speed-Dial -> Live Transfers",
+        desc: "+ rotates 45° + 2 staggered pills · Transfers rolling %, 1.8s sweep, breathing chunk flip, FLOOD_WAIT countdown, Pause/Resume & green check." },
+      { id: "multiselect", num: "05", titleAr: "تحديد متعدد -> حذف -> تراجع Undo", titleEn: "Multi-Select -> Delete -> Undo Toast",
+        desc: "90ms 1.02 lift · Rolling selection count · Dimmed FloatingTabBar · Dialog blur 16 · Delete row collapse -> Top Toast Undo restores item." },
+      { id: "destination", num: "06", titleAr: "الإعدادات -> وجهة التخزين -> إنشاء جروب", titleEn: "Settings -> Storage Sheet -> Create Vault",
+        desc: "50ms staggered Settings cards · 400ms bottom sheet · Staggered chats -> Create Vault spinner -> drawn check -> 600ms champagne glow." },
+      { id: "themelang", num: "07", titleAr: "كشف الثيم الدائري واتجاه اللغة", titleEn: "Theme Circular Reveal & AR/EN Mirror",
+        desc: "400ms emphasized circular clip-path reveal expanding directly from tapped Light/Dark miniature tile + 250ms RTL/LTR cross-fade." }
+    ];
+
+    function initFlowState(idx) {
+      if (idx === 0) state.flowState = { step: 0, shake: false, enteredVault: false };
+      if (idx === 1) state.flowState = { status: "idle" };
+      if (idx === 2) state.flowState = { inFolder: false, inPreview: false, chrome: true, infoOpen: false, copied: false };
+      if (idx === 3) state.flowState = { fabOpen: false, screen: "files", progress: 42, paused: false, flood: false, completed: false };
+      if (idx === 4) state.flowState = { selected: false, deleted: false, confirmOpen: false };
+      if (idx === 5) state.flowState = { sheetOpen: false, creating: false, created: false, dest: "Saved Messages" };
+      if (idx === 6) state.flowState = { animKey: 0 };
+    }
+
+    function navHtml(activeIdx, dimmed = false, badge = 0) {
+      const ar = isAr();
+      const labels = ar ? ["الملفات", "التحويلات", "الأخيرة", "الإعدادات"] : ["Files", "Transfers", "Recent", "Settings"];
+      const icons = ["folder", "sync", "clock", "sliders"];
+      const dirSign = ar ? -1 : 1;
+      return `
+        <div class="p-nav-bar ${dimmed ? "dimmed" : ""}">
+          <div class="p-nav-pill" style="transform:translateX(${activeIdx * 100 * dirSign}%);"></div>
+          ${labels.map((l, i) => `
+            <button class="p-nav-item ${i === activeIdx ? "active" : ""}" type="button">
+              <span class="mono" style="font-size:12px;">${icons[i] === "folder" ? "▢" : icons[i] === "sync" ? "⇅" : icons[i] === "clock" ? "◷" : "⚙"}</span>
+              <span>${l}${i === 1 && badge > 0 ? ` (${badge})` : ""}</span>
+            </button>
+          `).join("")}
+        </div>
+      `;
+    }
+
+    let transferTimer = null;
+    function renderPrototype() {
+      clearInterval(transferTimer);
+      const ar = isAr();
+      const phone = $("#phoneFrame");
+      phone.dir = ar ? "rtl" : "ltr";
+      phone.classList.toggle("dark", state.theme === "dark");
+      phone.classList.toggle("light", state.theme === "light");
+      phone.classList.toggle("reduce-motion", state.reduceMotion);
+
+      const f = FLOWS[state.activeFlow];
+      const stage = $("#phoneStage");
+      const meta = $("#flowMeta");
+      const qa = $("#flowQuickActions");
+      meta.innerHTML = `<strong style="color:var(--studio-ink);">${f.num} · ${ar ? f.titleAr : f.titleEn}</strong><div style="margin-top:4px;">${f.desc}</div>`;
+
+      const fs = state.flowState;
+      const slideIn = ar ? "-24px" : "24px";
+
+      if (state.activeFlow === 0) {
+        // AUTH -> FILES
+        if (fs.enteredVault) {
+          stage.innerHTML = `
+            <div style="animation:rowStaggerIn var(--t-base) var(--ease-standard) both;">
+              <div style="font-size:28px;font-weight:700;">${ar ? "الخزنة" : "Vault"}</div>
+              <div class="mono" style="font-size:11px;color:var(--green);margin-bottom:14px;">● ${ar ? "متصل · Argon2id + AES-256-GCM" : "SYNCED · Argon2id + AES-256-GCM"}</div>
+              ${["Documents", "Passport_Scan.pdf", "Recovery_Key.zip"].map((n, i) => `
+                <div class="p-glass clickable" style="padding:13px;border-radius:18px;margin-bottom:10px;display:flex;justify-content:space-between;animation:rowStaggerIn var(--t-base) var(--ease-standard) ${i * 30}ms both;">
+                  <span style="font-size:14px;font-weight:600;">${n}</span>
+                  <span class="mono" style="font-size:10.5px;color:var(--champagne);">AES</span>
+                </div>
+              `).join("")}
+            </div>
+            ${navHtml(0)}
+          `;
+        } else {
+          const stepsAr = ["رقم الهاتف", "رمز التحقق", "كلمة مرور ٢FA", "مفتاح التشفير"];
+          const stepsEn = ["Phone", "OTP Code", "2FA Cloud", "Vault Key"];
+          stage.innerHTML = `
+            <div style="display:flex;flex-direction:column;align-items:center;gap:14px;padding-top:26px;">
+              <img src="../../assets/icon.png" class="anim-float" style="width:74px;height:74px;border-radius:20px;box-shadow:0 0 36px rgba(217,214,207,0.22);" />
+              <div style="text-align:center;">
+                <div style="font-size:24px;font-weight:700;">BIG DUCK</div>
+                <div class="mono" style="font-size:11px;color:var(--champagne);">SIGNAL VAULT</div>
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;width:100%;margin-top:6px;">
+                ${[0,1,2,3].map(s => `
+                  <div style="height:4px;border-radius:999px;background:var(--glass);overflow:hidden;">
+                    <div style="height:100%;width:${s <= fs.step ? "100%" : "0%"};background:${s < fs.step ? "var(--green)" : "var(--champagne)"};transition:width var(--t-slow) var(--ease-standard), background var(--t-fast) var(--ease-standard);"></div>
+                  </div>
+                `).join("")}
+              </div>
+              <div class="p-glass ${fs.shake ? "anim-shake" : ""}" style="width:100%;padding:18px;display:flex;flex-direction:column;gap:12px;--slide-dir:${slideIn};animation:slideStepIn var(--t-base) var(--ease-standard);">
+                <div class="mono" style="font-size:11px;color:var(--champagne);">${(ar ? stepsAr : stepsEn)[fs.step]} · STEP ${fs.step + 1}/4</div>
+                ${fs.step === 1
+                  ? `<div style="display:flex;gap:8px;justify-content:center;direction:ltr;">
+                      ${["4","8","2","9","•"].map((d,i)=>`<div style="width:42px;height:48px;border-radius:12px;border:1.5px solid ${fs.shake ? "var(--coral)" : i<4?"var(--champagne)":"var(--glass-border)"};display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:700;transform:scale(${i===3?1.08:1});transition:transform var(--t-fast) var(--ease-emphasized);">${d}</div>`).join("")}
+                    </div>`
+                  : `<input class="p-input" value="${fs.step === 0 ? "+20 100 555 0194" : "••••••••••••"}" readonly />`
+                }
+                <button class="p-pill-btn" onclick="stepAuthNext()" type="button">${fs.step === 3 ? (ar ? "دخول الخزنة" : "Enter Vault") : (ar ? "التالي" : "Continue")}</button>
+              </div>
+            </div>
+          `;
+        }
+        qa.innerHTML = `
+          <button class="btn-mini" onclick="stepAuthNext()" type="button">Next Step (${fs.step+1}/4)</button>
+          <button class="btn-mini" onclick="stepAuthError()" type="button">Simulate OTP Error Shake</button>
+        `;
+      } else if (state.activeFlow === 1) {
+        // LOCK -> UNLOCK
+        if (fs.status === "unlocked") {
+          stage.innerHTML = `<div style="padding-top:16px;animation:rowStaggerIn var(--t-slow) var(--ease-emphasized);"><h2 style="margin:0 0 8px;">${ar?"مرحباً بك في الخزنة":"Vault Unlocked"}</h2><div class="p-glass" style="padding:18px;display:flex;align-items:center;gap:10px;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" class="anim-draw-check"><path d="M5 13l4 4L19 7" stroke="var(--green)" stroke-width="2.2" stroke-linecap="round"/></svg><span>${ar ? "تم فك تشفير الفهرس المحلي" : "Local index keys decrypted"}</span></div></div>${navHtml(0)}`;
+        } else {
+          const failed = fs.status === "failed";
+          stage.innerHTML = `
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;">
+              <div class="p-glass ${failed ? "anim-shake" : "anim-orb"}" onclick="unlockSuccess()" style="width:154px;height:154px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;border:1.5px solid ${failed ? "var(--coral)" : fs.status==="ok" ? "var(--green)" : "var(--champagne)"};">
+                ${fs.status === "ok"
+                  ? `<svg width="46" height="46" viewBox="0 0 24 24" fill="none" class="anim-draw-check"><path d="M5 13l4 4L19 7" stroke="var(--green)" stroke-width="2.4" stroke-linecap="round"/></svg>`
+                  : `<span class="mono" style="font-size:13px;color:${failed ? "var(--coral)" : "var(--champagne)"};">${ar ? "بصمة / Face ID" : "BIOMETRIC LOCK"}</span>`
+                }
+              </div>
+              <div style="text-align:center;">
+                <div style="font-size:22px;font-weight:700;">${ar ? "افتح خزنتك" : "Unlock your vault"}</div>
+                <div style="font-size:13px;color:${failed ? "var(--coral)" : "var(--sec)"};margin-top:4px;">${failed ? (ar ? "تعذر التحقق — حاول مرة أخرى" : "Verification failed — try again") : (ar ? "المس الدائرة للفتح" : "Tap orb to authenticate")}</div>
+              </div>
+              <div style="display:flex;gap:10px;">
+                <button class="p-pill-btn secondary" onclick="unlockFail()" type="button">${ar ? "محاكاة فشل" : "Test Failure"}</button>
+                <button class="p-pill-btn" onclick="unlockSuccess()" type="button">${ar ? "تحقق الآن" : "Unlock"}</button>
+              </div>
+            </div>
+          `;
+        }
+        qa.innerHTML = `
+          <button class="btn-mini" onclick="unlockSuccess()" type="button">Trigger Success</button>
+          <button class="btn-mini" onclick="unlockFail()" type="button">Trigger 3×±8px Shake</button>
+        `;
+      } else if (state.activeFlow === 2) {
+        // FILES -> FOLDER -> PREVIEW
+        if (fs.inPreview) {
+          stage.innerHTML = `
+            <div style="position:absolute;inset:0;background:#050506;color:#F4F4F6;padding:18px;display:flex;flex-direction:column;justify-content:space-between;animation:rowStaggerIn var(--t-slow) var(--ease-emphasized);" onclick="togglePreviewChrome()">
+              <div style="height:2px;width:100%;background:rgba(255,255,255,0.08);overflow:hidden;border-radius:999px;">
+                <div style="width:40%;height:100%;background:#D9D6CF;animation:barSweep calc(1300ms * var(--m-scale)) linear infinite;"></div>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center;transform:translateY(${fs.chrome ? "0" : "-16px"});opacity:${fs.chrome ? 1 : 0};transition:all var(--t-fast) var(--ease-standard);">
+                <button class="btn-mini" onclick="event.stopPropagation();closePreview()" type="button">${ar ? "رجوع" : "Back"}</button>
+                <div class="mono" style="font-size:11px;color:#4ADE80;">AES-256</div>
+                <button class="btn-mini" onclick="event.stopPropagation();toggleInfoSheet()" type="button">${ar ? "معلومات" : "Info"}</button>
+              </div>
+              <div style="flex:1;display:flex;align-items:center;justify-content:center;">
+                <div style="width:240px;height:300px;border-radius:20px;border:1px solid rgba(255,255,255,0.16);background:radial-gradient(circle at 30% 25%, #23242b, #0e0f12);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;">
+                  <div class="mono" style="font-size:12px;color:#D9D6CF;">DARKROOM VIEWER</div>
+                  <div style="font-size:15px;font-weight:600;">Passport_Scan.pdf</div>
+                  <div class="mono" style="font-size:11px;color:#9A9CA6;">#050506 STAY PURE BLACK</div>
+                </div>
+              </div>
+              <div style="display:flex;justify-content:center;gap:8px;transform:translateY(${fs.chrome ? "0" : "16px"});opacity:${fs.chrome ? 1 : 0};transition:all var(--t-fast) var(--ease-standard);">
+                <button class="btn-mini" onclick="event.stopPropagation();closePreview()" type="button">${ar ? "سحب للأسفل للإغلاق" : "Swipe Down Dismiss"}</button>
+              </div>
+              ${fs.infoOpen ? `
+                <div class="p-glass" onclick="event.stopPropagation()" style="position:absolute;left:12px;right:12px;bottom:14px;padding:18px;border-radius:30px;background:#14151a;border-color:rgba(255,255,255,0.16);animation:rowStaggerIn var(--t-slow) var(--ease-emphasized);">
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                    <strong>SHA-256 Integrity</strong>
+                    <button class="btn-mini" onclick="copyHash()" type="button">${fs.copied ? "✓ Copied" : "Copy Hash"}</button>
+                  </div>
+                  <div class="mono" style="font-size:10.5px;color:#9A9CA6;">e3b0c44298fc1c149afbf4c8996fb924</div>
+                </div>` : ""}
+            </div>
+          `;
+        } else {
+          stage.innerHTML = `
+            <div style="display:flex;flex-direction:column;gap:12px;">
+              <div style="font-size:26px;font-weight:700;">${fs.inFolder ? "Documents" : (ar ? "الخزنة" : "Vault")}</div>
+              <div style="display:flex;gap:8px;align-items:center;">
+                <span class="btn-mini" style="cursor:pointer;" onclick="setFolder(false)">${ar ? "الرئيسية" : "Root"}</span>
+                ${fs.inFolder ? `<span class="mono" style="font-size:11px;color:var(--champagne);animation:rowStaggerIn var(--t-fast) var(--ease-standard);">/ Documents</span>` : ""}
+              </div>
+              ${!fs.inFolder ? `
+                <div class="p-glass clickable" onclick="setFolder(true)" style="padding:14px;border-radius:18px;display:flex;justify-content:space-between;align-items:center;">
+                  <span style="font-weight:600;">📁 Documents</span>
+                  <span class="mono" style="font-size:11px;color:var(--champagne);">${ar ? "افتح ←" : "Open →"}</span>
+                </div>` : ""}
+              <div class="p-glass clickable" onclick="openPreview()" style="padding:14px;border-radius:18px;display:flex;justify-content:space-between;align-items:center;--slide-dir:${slideIn};animation:slideStepIn var(--t-base) var(--ease-standard);">
+                <div>
+                  <div style="font-weight:600;">${fs.inFolder ? "Tax_Return_2026.pdf" : "Passport_Scan.pdf"}</div>
+                  <div class="mono" style="font-size:10.5px;color:var(--sec);">AES-256 · 4.2 MiB</div>
+                </div>
+                <span class="btn-mini">${ar ? "معاينة" : "Preview"}</span>
+              </div>
+            </div>
+            ${navHtml(0)}
+          `;
+        }
+        qa.innerHTML = `
+          <button class="btn-mini" onclick="setFolder(${!fs.inFolder})" type="button">${fs.inFolder ? "Back to Root" : "Drill into Folder"}</button>
+          <button class="btn-mini" onclick="openPreview()" type="button">Hero Open Preview</button>
+          <button class="btn-mini" onclick="toggleInfoSheet()" type="button">Toggle Info Sheet</button>
+        `;
+      } else if (state.activeFlow === 3) {
+        // + FAB -> TRANSFERS LIVE
+        if (fs.screen === "transfers") {
+          stage.innerHTML = `
+            <div style="display:flex;flex-direction:column;gap:14px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <div style="font-size:26px;font-weight:700;">${ar ? "التحويلات" : "Transfers"}</div>
+                ${fs.flood ? `<span class="badge b-warn mono">FLOOD_WAIT 12s</span>` : `<span class="badge b-low mono">${fs.completed ? "DONE" : "LIVE"}</span>`}
+              </div>
+              <div class="p-glass" style="padding:16px;display:flex;flex-direction:column;gap:10px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                  <strong>Contract_Vault.zip</strong>
+                  <span class="mono" style="font-size:13px;color:${fs.completed ? "var(--green)" : "var(--champagne)"};">${fs.completed ? "100%" : fs.progress + "%"}</span>
+                </div>
+                <div style="height:5px;border-radius:999px;background:var(--glass);overflow:hidden;position:relative;">
+                  <div style="height:100%;width:${fs.completed ? 100 : fs.progress}%;background:${fs.completed ? "var(--green)" : "var(--champagne)"};transition:width var(--t-base) var(--ease-standard);position:relative;overflow:hidden;">
+                    ${!fs.paused && !fs.completed ? `<div style="position:absolute;inset:0;width:45%;background:linear-gradient(90deg,transparent,rgba(255,255,255,0.45),transparent);animation:barSweep calc(1800ms * var(--m-scale)) linear infinite;"></div>` : ""}
+                  </div>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:4px;">
+                  ${[0,1,2,3,4,5].map(c => {
+                    const doneC = fs.completed || c < Math.floor(fs.progress / 17);
+                    const actC = !fs.completed && c === Math.floor(fs.progress / 17);
+                    return `<div class="${actC ? "anim-chunk-pulse" : ""}" style="height:4px;border-radius:999px;background:${doneC ? "var(--green)" : actC ? "var(--champagne)" : "var(--glass)"};transition:background var(--t-fast) var(--ease-standard);"></div>`;
+                  }).join("")}
+                </div>
+                <div style="display:flex;gap:8px;justify-content:flex-end;">
+                  <button class="btn-mini" onclick="toggleTransferPause()" type="button">${fs.paused ? "Resume" : "Pause"}</button>
+                  <button class="btn-mini" onclick="completeTransfer()" type="button">Finish</button>
+                </div>
+              </div>
+            </div>
+            ${navHtml(1, false, fs.completed ? 0 : 1)}
+          `;
+        } else {
+          stage.innerHTML = `
+            <div style="font-size:26px;font-weight:700;">${ar ? "الخزنة" : "Vault"}</div>
+            <div class="mono" style="font-size:11px;color:var(--sec);margin-top:4px;">Tap + to open the staggered fan-out speed dial</div>
+            ${fs.fabOpen ? `<div onclick="toggleFab()" style="position:absolute;inset:0;background:rgba(0,0,0,0.42);z-index:12;"></div>` : ""}
+            <div style="position:absolute;bottom:96px;${ar?"left":"right"}:24px;z-index:20;display:flex;flex-direction:column;align-items:${ar?"flex-start":"flex-end"};gap:10px;">
+              ${fs.fabOpen ? `
+                <button class="p-glass clickable" onclick="startUploadFlow()" style="padding:10px 14px;border-radius:999px;color:var(--ink);font-size:12.5px;animation:rowStaggerIn var(--t-fast) var(--ease-emphasized) 40ms both;" type="button">📄 ${ar ? "رفع ملف" : "Upload file"}</button>
+                <button class="p-glass clickable" style="padding:10px 14px;border-radius:999px;color:var(--ink);font-size:12.5px;animation:rowStaggerIn var(--t-fast) var(--ease-emphasized) both;" type="button">📁 ${ar ? "مجلد جديد" : "New folder"}</button>
+              ` : ""}
+              <button class="p-fab ${fs.fabOpen ? "open" : ""}" onclick="toggleFab()" type="button"><svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
+            </div>
+            ${navHtml(0)}
+          `;
+        }
+        qa.innerHTML = `
+          <button class="btn-mini" onclick="toggleFab()" type="button">Toggle + Speed-Dial</button>
+          <button class="btn-mini" onclick="startUploadFlow()" type="button">Upload -> Transfers</button>
+          <button class="btn-mini" onclick="toggleFlood()" type="button">Toggle FLOOD_WAIT</button>
+        `;
+      } else if (state.activeFlow === 4) {
+        // MULTI-SELECT -> DELETE -> UNDO
+        stage.innerHTML = `
+          <div style="display:flex;flex-direction:column;gap:12px;">
+            <div style="font-size:26px;font-weight:700;">${ar ? "الخزنة" : "Vault"}</div>
+            ${!fs.deleted ? `
+              <div class="p-glass clickable" onclick="toggleSelectItem()" style="padding:14px;border-radius:18px;display:flex;justify-content:space-between;align-items:center;transform:scale(${fs.selected ? 1.02 : 1});border-color:${fs.selected ? "var(--champagne)" : "var(--glass-border)"};background:${fs.selected ? "var(--champagne-soft)" : "var(--glass)"};">
+                <div>
+                  <div style="font-weight:600;">Passport_Scan.pdf</div>
+                  <div class="mono" style="font-size:10.5px;color:var(--sec);">Long-press / tap to select</div>
+                </div>
+                ${fs.selected ? `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" class="anim-draw-check"><path d="M5 13l4 4L19 7" stroke="var(--green)" stroke-width="2.3" stroke-linecap="round"/></svg>` : ""}
+              </div>` : `<div class="mono" style="font-size:12px;color:var(--sec);padding:20px 0;text-align:center;">${ar ? "تم الحذف — اضغط تراجع في الإشعار" : "Deleted — tap Undo in toast"}</div>`}
+          </div>
+          ${fs.selected && !fs.deleted ? `
+            <div class="p-glass" style="position:absolute;bottom:24px;left:20px;right:20px;padding:12px 16px;border-radius:999px;display:flex;justify-content:space-between;align-items:center;z-index:20;animation:rowStaggerIn var(--t-fast) var(--ease-emphasized);">
+              <span class="mono" style="font-size:12px;color:var(--champagne);">1 SELECTED</span>
+              <button class="p-pill-btn danger" style="height:36px;" onclick="deleteSelectedItem()" type="button">${ar ? "حذف" : "Delete"}</button>
+            </div>` : ""}
+          ${navHtml(0, fs.selected && !fs.deleted)}
+        `;
+        qa.innerHTML = `
+          <button class="btn-mini" onclick="toggleSelectItem()" type="button">Toggle Select (1.02 lift)</button>
+          <button class="btn-mini" onclick="deleteSelectedItem()" type="button">Delete -> Show Undo Toast</button>
+          <button class="btn-mini" onclick="undoDelete()" type="button">Undo Restore</button>
+        `;
+      } else if (state.activeFlow === 5) {
+        // SETTINGS -> DESTINATION -> CREATE GROUP
+        stage.innerHTML = `
+          <div style="display:flex;flex-direction:column;gap:12px;">
+            <div style="font-size:26px;font-weight:700;">${ar ? "الإعدادات" : "Settings"}</div>
+            <div class="p-glass clickable" onclick="openDestSheet()" style="padding:16px;display:flex;justify-content:space-between;align-items:center;">
+              <div>
+                <div style="font-weight:600;">${fs.dest}</div>
+                <div class="mono" style="font-size:10.5px;color:var(--sec);">ACTIVE STORAGE VAULT</div>
+              </div>
+              <span class="btn-mini">${ar ? "تغيير" : "Change"}</span>
+            </div>
+          </div>
+          ${fs.sheetOpen ? `
+            <div style="position:absolute;inset:0;background:rgba(0,0,0,0.45);z-index:25;display:flex;flex-direction:column;justify-content:flex-end;">
+              <div class="p-glass" style="border-radius:32px 32px 0 0;padding:18px;background:var(--solid);display:flex;flex-direction:column;gap:10px;animation:rowStaggerIn var(--t-slow) var(--ease-emphasized);">
+                <strong>${ar ? "وجهة التخزين" : "Storage Destination"}</strong>
+                ${["Saved Messages", "BIG DUCK Archive", ...(fs.created ? ["Secret Duck Vault"] : [])].map((c, i) => `
+                  <div class="p-glass" style="padding:11px 14px;border-radius:14px;display:flex;justify-content:space-between;align-items:center;border-color:${c==="Secret Duck Vault"?"var(--champagne)":"var(--glass-border)"};box-shadow:${c==="Secret Duck Vault"?"0 0 18px rgba(217,214,207,0.28)":"none"};animation:rowStaggerIn var(--t-base) var(--ease-standard) ${i*30}ms both;">
+                    <span>${c}</span>
+                    ${c === fs.dest ? `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" class="anim-draw-check"><path d="M5 13l4 4L19 7" stroke="var(--green)" stroke-width="2.4" stroke-linecap="round"/></svg>` : ""}
+                  </div>
+                `).join("")}
+                <button class="p-pill-btn" onclick="createNewVaultGroup()" type="button">
+                  ${fs.creating ? "Creating..." : fs.created ? "✓ Vault Selected" : (ar ? "+ إنشاء خزنة خاصة" : "+ Create Private Vault")}
+                </button>
+              </div>
+            </div>` : ""}
+          ${navHtml(3)}
+        `;
+        qa.innerHTML = `
+          <button class="btn-mini" onclick="openDestSheet()" type="button">Open 400ms Sheet</button>
+          <button class="btn-mini" onclick="createNewVaultGroup()" type="button">Create &amp; Highlight Vault</button>
+        `;
+      } else {
+        // THEME CIRCULAR REVEAL & LANG SWITCH
+        stage.innerHTML = `
+          <div style="display:flex;flex-direction:column;gap:14px;">
+            <div style="font-size:26px;font-weight:700;">${ar ? "المظهر واللغة" : "Appearance"}</div>
+            <div class="p-glass" style="padding:16px;display:flex;flex-direction:column;gap:14px;">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                <button class="p-glass clickable" onclick="triggerPhoneTheme('light', event)" style="padding:14px;border-radius:16px;color:var(--ink);border-color:${state.theme==='light'?'var(--champagne)':'var(--glass-border)'};" type="button">☀ Ivory Light</button>
+                <button class="p-glass clickable" onclick="triggerPhoneTheme('dark', event)" style="padding:14px;border-radius:16px;color:var(--ink);border-color:${state.theme==='dark'?'var(--champagne)':'var(--glass-border)'};" type="button">☾ Obsidian Dark</button>
+              </div>
+              <div class="p-seg">
+                <div class="p-seg-thumb" style="width:49%;transform:translateX(${ar ? "0%" : (isAr() ? "-100%" : "100%")});"></div>
+                <button class="${ar ? "active" : ""}" onclick="setDir('rtl')" type="button">العربية (RTL)</button>
+                <button class="${!ar ? "active" : ""}" onclick="setDir('ltr')" type="button">English (LTR)</button>
+              </div>
+            </div>
+          </div>
+          ${navHtml(3)}
+        `;
+        qa.innerHTML = `
+          <button class="btn-mini" onclick="triggerPhoneTheme('light')" type="button">Circular Reveal → Ivory Light</button>
+          <button class="btn-mini" onclick="triggerPhoneTheme('dark')" type="button">Circular Reveal → Obsidian Dark</button>
+          <button class="btn-mini" onclick="setDir('${ar ? "ltr" : "rtl"}')" type="button">Mirror ${ar ? "EN LTR" : "AR RTL"}</button>
+        `;
+      }
+    }
+
+    // Flow helpers
+    window.stepAuthNext = () => {
+      if (state.flowState.step < 3) {
+        state.flowState.step++;
+        logMotion("Auth step slide", "250ms standard · tape 400ms", "selection");
+      } else {
+        state.flowState.enteredVault = true;
+        logMotion("Auth -> Vault enter", "400ms emphasized · 30ms row stagger", "success");
+      }
+      renderPrototype();
+    };
+    window.stepAuthError = () => {
+      state.flowState.step = 1;
+      state.flowState.shake = true;
+      renderPrototype();
+      logMotion("OTP Error", "300ms 3×±6px horizontal shake", "error");
+      setTimeout(() => { state.flowState.shake = false; renderPrototype(); }, 380);
+    };
+    window.unlockFail = () => {
+      state.flowState.status = "failed";
+      renderPrototype();
+      logMotion("Biometric Failed", "300ms 3×±8px coral shake", "error");
+    };
+    window.unlockSuccess = () => {
+      state.flowState.status = "ok";
+      renderPrototype();
+      logMotion("Biometric Passed", "250ms draw check -> 400ms dissolve", "success");
+      setTimeout(() => { state.flowState.status = "unlocked"; renderPrototype(); }, 520);
+    };
+    window.setFolder = v => { state.flowState.inFolder = v; renderPrototype(); logMotion("Folder drill-down", "24px directional slide", "light"); };
+    window.openPreview = () => { state.flowState.inPreview = true; state.flowState.chrome = true; renderPrototype(); logMotion("Preview Hero Expand", "400ms emphasized Darkroom #050506", "light"); };
+    window.closePreview = () => { state.flowState.inPreview = false; state.flowState.infoOpen = false; renderPrototype(); logMotion("Preview Swipe Dismiss", "250ms scale back to list", "light"); };
+    window.togglePreviewChrome = () => { state.flowState.chrome = !state.flowState.chrome; renderPrototype(); logMotion("Preview Chrome Toggle", "180ms ±16px hide/show", "light"); };
+    window.toggleInfoSheet = () => { state.flowState.infoOpen = !state.flowState.infoOpen; renderPrototype(); logMotion("Info Sheet", "400ms emphasized + 40ms row stagger", "light"); };
+    window.copyHash = () => { state.flowState.copied = true; renderPrototype(); logMotion("Copy SHA-256", "180ms Copy -> Check swap", "success"); };
+    window.toggleFab = () => { state.flowState.fabOpen = !state.flowState.fabOpen; renderPrototype(); logMotion("Files + FAB", "180ms 45° rotate + 40ms pill stagger", "light"); };
+    window.startUploadFlow = () => {
+      state.flowState = { fabOpen: false, screen: "transfers", progress: 28, paused: false, flood: false, completed: false };
+      renderPrototype();
+      logMotion("Upload Queued", "Badge 0->1 + 1.8s linear sweep", "medium");
+      transferTimer = setInterval(() => {
+        if (!state.flowState.paused && !state.flowState.completed && state.activeFlow === 3) {
+          state.flowState.progress = Math.min(100, state.flowState.progress + 12);
+          if (state.flowState.progress >= 100) state.flowState.completed = true;
+          renderPrototype();
+        }
+      }, 750);
+    };
+    window.toggleTransferPause = () => { state.flowState.paused = !state.flowState.paused; renderPrototype(); logMotion("Pause / Resume", "180ms icon morph", "medium"); };
+    window.toggleFlood = () => { state.flowState.screen = "transfers"; state.flowState.flood = !state.flowState.flood; renderPrototype(); logMotion("FLOOD_WAIT", "Amber ring + rolling countdown", "warning"); };
+    window.completeTransfer = () => { state.flowState.completed = true; state.flowState.progress = 100; renderPrototype(); logMotion("Transfer Completed", "250ms drawn check + chunk green flip", "success"); };
+    window.toggleSelectItem = () => { state.flowState.selected = !state.flowState.selected; renderPrototype(); logMotion("Multi-Select", "90ms 1.02 lift + dimmed nav", "medium"); };
+    window.deleteSelectedItem = () => {
+      state.flowState.deleted = true; state.flowState.selected = false; renderPrototype();
+      showPhoneToast(isAr() ? "تم حذف عنصر" : "Deleted 1 item", true, undoDelete);
+      logMotion("Delete + Toast", "250ms collapse + Undo toast (2.5s)", "error");
+    };
+    window.undoDelete = () => { state.flowState.deleted = false; renderPrototype(); logMotion("Undo Restored", "180ms restore slide-in", "success"); };
+    window.openDestSheet = () => { state.flowState.sheetOpen = true; renderPrototype(); logMotion("Storage Sheet", "400ms emphasized + 30ms row stagger", "light"); };
+    window.createNewVaultGroup = () => {
+      state.flowState.creating = true; renderPrototype();
+      setTimeout(() => {
+        state.flowState.creating = false; state.flowState.created = true; state.flowState.dest = "Secret Duck Vault";
+        renderPrototype();
+        logMotion("Vault Created", "Check draw + 600ms champagne row glow", "success");
+        setTimeout(() => { state.flowState.sheetOpen = false; renderPrototype(); }, 900);
+      }, 550);
+    };
+    window.triggerPhoneTheme = (mode, ev) => {
+      const phone = $("#phoneFrame");
+      if (!state.reduceMotion) {
+        const clone = phone.cloneNode(true);
+        clone.id = "";
+        clone.style.position = "absolute";
+        clone.style.inset = "0";
+        clone.style.pointerEvents = "none";
+        clone.style.zIndex = "35";
+        clone.style.border = "none";
+        clone.style.borderRadius = "0";
+        phone.appendChild(clone);
+        state.theme = mode;
+        syncTopButtons();
+        renderPrototype();
+        const ms = 400 * state.speedScale;
+        const x = ev ? ev.offsetX : 180;
+        const y = ev ? ev.offsetY : 320;
+        phone.animate(
+          [{ clipPath: `circle(0% at ${x}px ${y}px)` }, { clipPath: `circle(145% at ${x}px ${y}px)` }],
+          { duration: ms, easing: "cubic-bezier(0.16, 1, 0.3, 1)" }
+        ).onfinish = () => clone.remove();
+        logMotion(`Theme Reveal -> ${mode}`, `${ms}ms circular clip-path`, "selection");
+      } else {
+        state.theme = mode;
+        syncTopButtons();
+        renderPrototype();
+        logMotion(`Theme Fade -> ${mode}`, "150ms reduce-motion fade", "selection");
+      }
+    };
+    window.setDir = d => {
+      state.dir = d;
+      syncTopButtons();
+      renderPrototype();
+      logMotion(`Direction -> ${d.toUpperCase()}`, "250ms standard RTL/LTR mirror", "selection");
+    };
+
+    function renderFlowList() {
+      $("#flowList").innerHTML = FLOWS.map((f, idx) => `
+        <button class="flow-item ${state.activeFlow === idx ? "active" : ""}" onclick="selectFlow(${idx})" type="button">
+          <div class="flow-num mono">FLOW ${f.num}</div>
+          <div class="flow-name">${isAr() ? f.titleAr : f.titleEn}</div>
+          <div class="flow-sub">${f.desc}</div>
+        </button>
+      `).join("");
+    }
+    window.selectFlow = idx => { state.activeFlow = idx; initFlowState(idx); renderFlowList(); renderPrototype(); logMotion(`Loaded Flow ${FLOWS[idx].num}`, "ready", "—"); };
+    $("#resetFlowBtn").addEventListener("click", () => { initFlowState(state.activeFlow); renderPrototype(); });
+
+    // Top studio bar bindings
+    function syncTopButtons() {
+      $$("#themeCtrl .seg-btn").forEach(b => b.classList.toggle("active", b.dataset.val === state.theme));
+      $$("#dirCtrl .seg-btn").forEach(b => b.classList.toggle("active", b.dataset.val === state.dir));
+      $$("#reduceCtrl .seg-btn").forEach(b => b.classList.toggle("active", b.dataset.val === (state.reduceMotion ? "on" : "off")));
+      $$("#speedCtrl .seg-btn").forEach(b => b.classList.toggle("active", Number(b.dataset.val) === state.speedScale));
+      document.documentElement.style.setProperty("--m-scale", state.speedScale);
+    }
+    $("#themeCtrl").addEventListener("click", e => { const b = e.target.closest(".seg-btn"); if (!b) return; state.theme = b.dataset.val; syncTopButtons(); renderPrototype(); });
+    $("#dirCtrl").addEventListener("click", e => { const b = e.target.closest(".seg-btn"); if (!b) return; state.dir = b.dataset.val; syncTopButtons(); renderFlowList(); renderPrototype(); });
+    $("#reduceCtrl").addEventListener("click", e => { const b = e.target.closest(".seg-btn"); if (!b) return; state.reduceMotion = b.dataset.val === "on"; syncTopButtons(); renderPrototype(); logMotion(`Reduce Motion: ${b.dataset.val.toUpperCase()}`, "150ms fade fallback", "—"); });
+    $("#speedCtrl").addEventListener("click", e => { const b = e.target.closest(".seg-btn"); if (!b) return; state.speedScale = Number(b.dataset.val); syncTopButtons(); renderPrototype(); });
+
+    // 3. Handoff & Loop Tables
+    const HANDOFF_ROWS = [
+      ["Global Press & Sheen", "Pointer down / up", "VaultTap + VaultSurface", "scale (0.97), border alpha, brightness", "90ms / 180ms", "standard", "0ms", "No", "—", "150ms border fade"],
+      ["Scroll Specular Parallax", "Scroll offset", "VaultScrollParallax", "sheen translateX (0..12px RTL)", "Live", "linear", "0ms", "No", "—", "Static sheen"],
+      ["Focus Ring", "Input focus", "VaultGlassInputContainer", "border 1->1.5px, glow blur 12", "180ms", "standard", "0ms", "No", "—", "Instant color swap"],
+      ["Liquid Toggle", "Switch tap", "VaultToggle", "knob X + 1.06 pulse + track fill", "180ms", "standard", "0ms", "No", "light", "150ms fade, no pulse"],
+      ["Capsule & Tab Bar", "Segment / Tab tap", "VaultSegmentedControl / FloatingTabBar", "capsule AlignmentDirectional, icon color", "250ms / 180ms", "emphasized", "0ms", "No", "light / selection", "150ms fade"],
+      ["Floating Nav Hide", "Vertical scroll", "FloatingTabBar (navHiddenByScroll)", "translateY, opacity", "180ms", "standard / exit", "0ms", "No", "—", "Always visible"],
+      ["Top Toast + Undo", "Event / Delete", "main.dart Toast overlay", "translateY (-16->0), dot scale, opacity", "250ms / 180ms", "emphasized / exit", "2.5s stay", "No", "success / error", "150ms fade only"],
+      ["Bottom Sheet / Dialog", "Open modal", "showVaultBottomSheet / showVaultDialog", "sheet translateY / dialog scale 0.94 + blur 16", "400ms / 250ms", "emphasized / exit", "0ms", "No", "—", "150ms fade, flat scrim"],
+      ["Theme Reveal & Lang", "Tile tap / AR-EN", "VaultCircularRevealClipper + Opacity", "clip circle radius / direction cross-fade", "400ms / 250ms", "emphasized / standard", "0ms", "No", "selection", "150ms fade"],
+      ["Auth Steps & OTP", "Next / Wrong code", "AuthScreen + VaultHorizontalShake", "step ±24px, tape fill, 3×±6px shake", "250ms / 400ms / 300ms", "standard", "0ms", "Duck float", "error", "150ms fade, coral ring"],
+      ["Lock Screen Unlock", "Biometric callback", "LockScreen + VaultAnimatedDrawCheck", "orb scale, drawn check, 1->1.4 fade exit", "4s / 250ms / 400ms", "emphasized", "0ms", "Orb", "success / error", "150ms fade"],
+      ["Files Stagger & Search", "Mount / Search focus", "VaultStaggeredSlideFade + FilesScreen", "header + rows 30ms stagger (cap 8)", "250ms", "standard", "30ms step", "No", "—", "150ms batch fade"],
+      ["+ FAB & Multi-Select", "Tap + / Long press", "FilesScreen", "FAB +45°, 2 pills 40ms, 1.02 lift, rolling #", "180ms / 90ms", "emphasized", "40ms", "No", "medium", "150ms fade"],
+      ["Preview & Info Sheet", "Tap file / Swipe", "PreviewScreen + Hero", "Hero expand, ±16px chrome, 40ms Info rows", "400ms / 180ms", "emphasized", "40ms rows", "Decrypt bar", "light / success", "150ms fade"],
+      ["Transfers & FLOOD_WAIT", "Stream / Pause", "TransfersScreen + VaultChunkTape", "rolling %, 1.8s sweep, chunk flip, radial ring", "250ms / 1800ms", "standard / linear", "0ms", "Active only", "medium / error", "Static bar + numbers"],
+      ["Settings & Storage", "Tab / Sheet / Tile", "SettingsScreen + showStorageDestinationSheet", "50ms sections, 3D tilt, 600ms new row glow", "620ms / 400ms / 600ms", "standard", "50ms / 30ms", "No", "selection", "150ms fade"]
+    ];
+    function renderHandoff(q = "") {
+      const body = $("#handoffTable tbody");
+      const needle = q.trim().toLowerCase();
+      body.innerHTML = HANDOFF_ROWS.filter(r => !needle || r.join(" ").toLowerCase().includes(needle))
+        .map(r => `<tr><td><strong>${r[0]}</strong></td><td>${r[1]}</td><td><span class="b-code">${r[2]}</span></td><td>${r[3]}</td><td class="mono">${r[4]}</td><td class="mono">${r[5]}</td><td class="mono">${r[6]}</td><td>${r[7]}</td><td class="mono">${r[8]}</td><td>${r[9]}</td></tr>`).join("");
+    }
+    $("#handoffFilter").addEventListener("input", e => renderHandoff(e.target.value));
+
+    const LOOP_ROWS = [
+      ["Auth Duck Vertical Float", "AuthScreen", "Transform.translate (±4px) + pre-baked gradient glow", "RepaintBoundary around logo", "<span class='badge b-low'>Low (No blur anim)</span>", "60 fps (~0.3ms)", ".stop(), dy = 0"],
+      ["Lock Biometric Orb", "LockScreen", "Transform.scale (1->1.06) + border alpha (0.2->0.5)", "Isolated RepaintBoundary over frosted canvas", "<span class='badge b-warn'>⚠ Static Blur Nearby</span> Sigma fixed at 24px", "60 fps (~0.6ms)", ".stop(), alpha 0.35"],
+      ["Connected / Live Status Dot", "FloatingTabBar, Settings", "Dot scale (1->1.45) + opacity", "10×10 RepaintBoundary", "<span class='badge b-low'>Low (Zero blur)</span>", "60 fps (~0.1ms)", "Solid dot, no pulse"],
+      ["Active Transfer Sweep", "TransfersScreen", "Linear highlight translateX along 4px track", "Clipped inside progress bar; active tasks only", "<span class='badge b-low'>Low</span>", "60 fps (~0.2ms)", "Static progress bar"],
+      ["Active Chunk Breathe", "TransfersScreen", "Chunk pill opacity (0.45->1.0, 1200ms)", "Single active chunk pill only", "<span class='badge b-low'>Low</span>", "60 fps (~0.1ms)", "Static champagne chip"],
+      ["Preview Decrypt Line", "PreviewScreen", "2px indeterminate top hairline translateX", "Only while _isLoadingMedia is true", "<span class='badge b-low'>Low</span>", "60 fps (~0.2ms)", "Static 2px bar"],
+      ["Loading Skeleton Shimmer", "FilesScreen", "Linear gradient sweep (1400ms)", "Solid matte base card during load only", "<span class='badge b-warn'>⚠ Blur Adjacent</span> BackdropFilter skipped on skeletons", "60 fps (~1.1ms)", "Static matte fill"]
+    ];
+    $("#loopTable tbody").innerHTML = LOOP_ROWS.map(r => `<tr><td><strong>${r[0]}</strong></td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td><td>${r[4]}</td><td class="mono">${r[5]}</td><td>${r[6]}</td></tr>`).join("");
+
+    renderCurves();
+    renderHandoff();
+    initFlowState(0);
+    syncTopButtons();
+    renderFlowList();
+    renderPrototype();
+    logMotion("Motion Studio Initialized", "vaultMotion 2.0", "ready");
+  </script>
+</body>
+</html>

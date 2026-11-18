@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:material_ui/material_ui.dart' show ThemeMode;
+import 'package:material_ui/material_ui.dart' show Offset, ThemeMode;
 import 'package:path_provider/path_provider.dart';
 
 import '../l10n/app_strings.dart';
@@ -144,9 +144,17 @@ class AppController extends ChangeNotifier {
     tasks: [],
   );
   List<FileRecord> _demoAllFiles = List<FileRecord>.from(_initialDemoFiles);
+  List<Folder> _undoFolders = const [];
+  List<FileRecord> _undoFiles = const [];
   int floodWaitSeconds = 0;
   String? toastMessage;
   bool toastIsError = false;
+  String? toastActionLabel;
+  VoidCallback? onToastAction;
+  bool navHiddenByScroll = false;
+  bool lockWithBlurBackdrop = false;
+  Offset? themeRevealOrigin;
+  int themeChangeId = 0;
   final Map<int, String> _localPathsByFileId = {};
 
   AppController({
@@ -204,10 +212,18 @@ class AppController extends ChangeNotifier {
       .where((t) => t.state == TaskState.queued || t.state == TaskState.running)
       .length;
 
-  void setThemeMode(ThemeMode mode) {
+  void setThemeMode(ThemeMode mode, {Offset? revealOrigin}) {
     if (themeMode == mode) return;
     themeMode = mode;
+    themeRevealOrigin = revealOrigin;
+    themeChangeId++;
     _saveConfig();
+    notifyListeners();
+  }
+
+  void setNavHiddenByScroll(bool hidden) {
+    if (navHiddenByScroll == hidden) return;
+    navHiddenByScroll = hidden;
     notifyListeners();
   }
 
@@ -442,17 +458,24 @@ class AppController extends ChangeNotifier {
     }
     if (DateTime.now().difference(bgAt).inMinutes >= autoLockMinutes) {
       isLocked = true;
+      lockWithBlurBackdrop = true;
       notifyListeners();
     }
   }
 
-  Future<bool> unlockWithBiometrics() async {
+  Future<bool> unlockWithBiometrics({
+    Future<void> Function()? onBeforeUnlock,
+  }) async {
     if (_biometricPromptActive) return false;
     _biometricPromptActive = true;
     try {
       final ok = await biometrics.authenticate(isArabic: isArabic);
       if (ok) {
+        if (onBeforeUnlock != null) {
+          await onBeforeUnlock();
+        }
         isLocked = false;
+        lockWithBlurBackdrop = false;
         notifyListeners();
         _flushPendingSharedFiles();
       }
@@ -465,6 +488,7 @@ class AppController extends ChangeNotifier {
   /// Fallback local unlock used when user confirms device passcode flow.
   void unlockWithPasscodeFallback() {
     isLocked = false;
+    lockWithBlurBackdrop = false;
     notifyListeners();
     _flushPendingSharedFiles();
   }
@@ -662,21 +686,41 @@ class AppController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void showToast(String message, {bool isError = false}) {
+  void showToast(
+    String message, {
+    bool isError = false,
+    String? actionLabel,
+    VoidCallback? onAction,
+  }) {
     toastMessage = message;
     toastIsError = isError;
+    toastActionLabel = actionLabel;
+    onToastAction = onAction;
     _toastTimer?.cancel();
-    _toastTimer = Timer(const Duration(seconds: 3), () {
+    _toastTimer = Timer(const Duration(milliseconds: 2500), () {
       toastMessage = null;
+      toastActionLabel = null;
+      onToastAction = null;
       notifyListeners();
     });
     notifyListeners();
+  }
+
+  void triggerToastAction() {
+    final cb = onToastAction;
+    _toastTimer?.cancel();
+    toastMessage = null;
+    toastActionLabel = null;
+    onToastAction = null;
+    notifyListeners();
+    cb?.call();
   }
 
   void setTab(MobileTab tab) {
     if (activeTab == tab) return;
     activeTab = tab;
     isSelecting = false;
+    navHiddenByScroll = false;
     notifyListeners();
   }
 
@@ -839,6 +883,7 @@ class AppController extends ChangeNotifier {
   }
 
   void openFolder(int? folderId) {
+    navHiddenByScroll = false;
     if (demoMode || !hasNativeCore) {
       _refreshDemoView(folderId);
       notifyListeners();
@@ -974,10 +1019,19 @@ class AppController extends ChangeNotifier {
   }
 
   void deleteFile(int id) {
+    navHiddenByScroll = false;
     if (demoMode || !hasNativeCore) {
+      final removed = _demoAllFiles.where((f) => f.id == id).toList();
+      _undoFolders = const [];
+      _undoFiles = removed;
       _demoAllFiles.removeWhere((f) => f.id == id);
       _refreshDemoView(snapshot.currentFolder?.id);
-      showToast(strings.deletedToast);
+      showToast(
+        strings.deletedToast,
+        isError: true,
+        actionLabel: removed.isNotEmpty ? strings.undoAction : null,
+        onAction: removed.isNotEmpty ? undoLastDelete : null,
+      );
       return;
     }
     _bridge.sendCommand({'type': 'delete_file', 'id': id});
@@ -1031,7 +1085,18 @@ class AppController extends ChangeNotifier {
     List<int> folderIds = const [],
     List<int> fileIds = const [],
   }) {
+    navHiddenByScroll = false;
     if (demoMode || !hasNativeCore) {
+      final removedFolders = snapshot.allFolders
+          .where((f) => folderIds.contains(f.id))
+          .toList(growable: false);
+      final removedFiles = _demoAllFiles
+          .where((f) =>
+              fileIds.contains(f.id) || folderIds.contains(f.folderId))
+          .toList(growable: false);
+      _undoFolders = removedFolders;
+      _undoFiles = removedFiles;
+
       final updatedAll = snapshot.allFolders
           .where((f) => !folderIds.contains(f.id))
           .toList(growable: false);
@@ -1039,7 +1104,13 @@ class AppController extends ChangeNotifier {
           (f) => fileIds.contains(f.id) || folderIds.contains(f.folderId));
       _refreshDemoView(snapshot.currentFolder?.id,
           updatedAllFolders: updatedAll);
-      showToast(strings.deletedManyToast(folderIds.length + fileIds.length));
+      final hasUndo = removedFolders.isNotEmpty || removedFiles.isNotEmpty;
+      showToast(
+        strings.deletedManyToast(folderIds.length + fileIds.length),
+        isError: true,
+        actionLabel: hasUndo ? strings.undoAction : null,
+        onAction: hasUndo ? undoLastDelete : null,
+      );
       return;
     }
     for (final id in folderIds) {
@@ -1048,7 +1119,35 @@ class AppController extends ChangeNotifier {
     for (final id in fileIds) {
       _bridge.sendCommand({'type': 'delete_file', 'id': id});
     }
-    showToast(strings.deletedManyToast(folderIds.length + fileIds.length));
+    showToast(
+      strings.deletedManyToast(folderIds.length + fileIds.length),
+      isError: true,
+    );
+  }
+
+  void undoLastDelete() {
+    navHiddenByScroll = false;
+    if (!demoMode && hasNativeCore) return;
+    if (_undoFolders.isEmpty && _undoFiles.isEmpty) return;
+    final restoredFolders = _undoFolders;
+    final restoredFiles = _undoFiles;
+    _undoFolders = const [];
+    _undoFiles = const [];
+    final existingFolderIds = snapshot.allFolders.map((f) => f.id).toSet();
+    final mergedFolders = [
+      ...snapshot.allFolders,
+      ...restoredFolders.where((f) => !existingFolderIds.contains(f.id)),
+    ];
+    final existingFileIds = _demoAllFiles.map((f) => f.id).toSet();
+    _demoAllFiles = [
+      ...restoredFiles.where((f) => !existingFileIds.contains(f.id)),
+      ..._demoAllFiles,
+    ];
+    _refreshDemoView(
+      snapshot.currentFolder?.id,
+      updatedAllFolders: mergedFolders,
+    );
+    showToast(strings.restoredToast);
   }
 
   Future<void> downloadMany(List<FileRecord> files) async {
