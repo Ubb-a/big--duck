@@ -33,31 +33,33 @@ class VaultCanvasBackdrop extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: palette.canvas,
-        gradient: palette.isDark
-            ? RadialGradient(
-                center: const Alignment(0.0, -0.35),
-                radius: 1.05,
-                colors: [
-                  palette.radialGlow,
-                  palette.canvas,
-                ],
-                stops: const [0.0, 0.85],
-              )
-            : LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  palette.radialGlow,
-                  palette.canvas,
-                  const Color(0xFFEEECE6),
-                ],
-                stops: const [0.0, 0.45, 1.0],
-              ),
+    return SizedBox.expand(
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: palette.canvas,
+          gradient: palette.isDark
+              ? RadialGradient(
+                  center: const Alignment(0.0, -0.35),
+                  radius: 1.05,
+                  colors: [
+                    palette.radialGlow,
+                    palette.canvas,
+                  ],
+                  stops: const [0.0, 0.85],
+                )
+              : LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    palette.radialGlow,
+                    palette.canvas,
+                    const Color(0xFFEEECE6),
+                  ],
+                  stops: const [0.0, 0.45, 1.0],
+                ),
+        ),
+        child: child,
       ),
-      child: child,
     );
   }
 }

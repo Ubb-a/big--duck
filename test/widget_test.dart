@@ -12,6 +12,7 @@ import 'package:big_duck/screens/settings_screen.dart';
 import 'package:big_duck/screens/transfers_screen.dart';
 import 'package:big_duck/state/app_controller.dart';
 import 'package:big_duck/theme/app_theme.dart';
+import 'package:big_duck/widgets/vault_surface.dart';
 
 void main() {
   testWidgets(
@@ -251,6 +252,14 @@ void main() {
     expect(find.text('Unlock your vault'), findsOneWidget);
     expect(find.text('Try again'), findsOneWidget);
     expect(find.text('Use passcode'), findsOneWidget);
+
+    final viewWidth =
+        tester.view.physicalSize.width / tester.view.devicePixelRatio;
+    expect(tester.getSize(find.byType(VaultCanvasBackdrop)).width, viewWidth);
+    expect(
+      tester.getCenter(find.byIcon(Icons.fingerprint_rounded)).dx,
+      closeTo(viewWidth / 2, 1.0),
+    );
   });
 
   testWidgets(

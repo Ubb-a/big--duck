@@ -195,14 +195,16 @@ class _LockScreenState extends State<LockScreen> with TickerProviderStateMixin {
     final fastDur = vaultMotion.duration(context, vaultMotion.fast);
 
     return Scaffold(
-      backgroundColor: Colors.transparent,
+      backgroundColor: p.canvas,
       body: VaultCanvasBackdrop(
         palette: p,
         child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-            child: Column(
-              children: [
+          child: SizedBox.expand(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
                 const SizedBox(height: 18),
                 Text(
                   s.appTitle,
@@ -359,6 +361,7 @@ class _LockScreenState extends State<LockScreen> with TickerProviderStateMixin {
                 ),
                 const SizedBox(height: 8),
               ],
+            ),
             ),
           ),
         ),
