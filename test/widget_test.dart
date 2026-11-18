@@ -28,6 +28,18 @@ void main() {
     expect(find.text('معاينة الواجهة'), findsNothing);
     expect(find.text('Preview UI'), findsNothing);
 
+    // Telegram OTP verification field uses exactly 5 digit cells
+    controller.debugApplyBridgeEvent(
+      const AuthChangedEvent(AuthStatus.awaitingCode('+201000000000')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('otp_4_false')), findsOneWidget);
+    expect(find.byKey(const ValueKey('otp_5_false')), findsNothing);
+    expect(
+      tester.widget<TextField>(find.byType(TextField).last).maxLength,
+      5,
+    );
+
     controller.enterDemoMode(silent: true);
     await tester.pumpAndSettle();
 

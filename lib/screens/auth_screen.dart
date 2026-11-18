@@ -62,6 +62,7 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
   Timer? _resendTimer;
   int _resendSeconds = 45;
   int _shakeCounter = 0;
+  int _prevCodeLen = 0;
   String? _lastErrorSeen;
 
   @override
@@ -116,6 +117,10 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
         _resendTimer != null) {
       _resendTimer?.cancel();
       _resendTimer = null;
+      _prevCodeLen = 0;
+    } else if (widget.controller.authStatus.kind !=
+        AuthStatusKind.awaitingCode) {
+      _prevCodeLen = 0;
     }
     final err = widget.controller.authError;
     if (err != null && err != _lastErrorSeen) {
@@ -691,8 +696,18 @@ class _AuthScreenState extends State<AuthScreen> with TickerProviderStateMixin {
                                                     controller: _codeCtrl,
                                                     hasError:
                                                         ctrl.authError != null,
-                                                    onChanged: (_) =>
-                                                        setState(() {}),
+                                                    onChanged: (val) {
+                                                      final len =
+                                                          val.trim().length;
+                                                      final autoSubmit =
+                                                          _prevCodeLen < 5 &&
+                                                              len == 5;
+                                                      _prevCodeLen = len;
+                                                      setState(() {});
+                                                      if (autoSubmit) {
+                                                        _handleAction();
+                                                      }
+                                                    },
                                                     onSubmitted: (_) =>
                                                         _handleAction(),
                                                   ),
@@ -1046,6 +1061,8 @@ class _GlassInputBox extends StatelessWidget {
 }
 
 class _OtpDigitCellsField extends StatelessWidget {
+  static const int _otpLength = 5;
+
   final AppPalette palette;
   final TextEditingController controller;
   final bool hasError;
@@ -1074,9 +1091,9 @@ class _OtpDigitCellsField extends StatelessWidget {
           alignment: Alignment.center,
           children: [
             Row(
-              children: List.generate(6, (idx) {
+              children: List.generate(_otpLength, (idx) {
                 final char = idx < digits.length ? digits[idx] : '';
-                final active = idx == digits.length.clamp(0, 5);
+                final active = idx == digits.length.clamp(0, _otpLength - 1);
                 return Expanded(
                   child: TweenAnimationBuilder<double>(
                     key: ValueKey('otp_${idx}_${char.isNotEmpty}'),
@@ -1093,7 +1110,8 @@ class _OtpDigitCellsField extends StatelessWidget {
                           vaultMotion.duration(context, vaultMotion.fast),
                       curve: vaultMotion.standard,
                       height: 52,
-                      margin: EdgeInsets.only(right: idx == 5 ? 0 : 6),
+                      margin:
+                          EdgeInsets.only(right: idx == _otpLength - 1 ? 0 : 8),
                       decoration: BoxDecoration(
                         color: hasError
                             ? p.coralSoft
@@ -1125,7 +1143,7 @@ class _OtpDigitCellsField extends StatelessWidget {
               controller: controller,
               keyboardType: TextInputType.number,
               textInputAction: TextInputAction.done,
-              maxLength: 6,
+              maxLength: _otpLength,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               onChanged: onChanged,
               onSubmitted: onSubmitted,
